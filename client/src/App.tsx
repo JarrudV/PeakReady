@@ -82,7 +82,7 @@ function MainApp() {
 
   return (
     <div className="min-h-screen text-brand-text font-sans pb-24">
-      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 sticky top-0 z-50 shadow-lg shadow-black/20 flex items-center justify-center">
+      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-center">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
             <MountainSnow size={18} className="text-brand-bg" />
