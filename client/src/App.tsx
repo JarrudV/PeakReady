@@ -1,18 +1,203 @@
-import { Switch, Route } from "wouter";
+import { useState } from "react";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
+import {
+  Home,
+  CalendarDays,
+  Activity,
+  Wrench,
+  MountainSnow,
+} from "lucide-react";
+import { Dashboard } from "@/pages/dashboard";
+import { TrainingPlan } from "@/pages/training-plan";
+import { Metrics } from "@/pages/metrics";
+import { ServiceTracker } from "@/pages/service-tracker";
+import { EventTracker } from "@/pages/event-tracker";
+import { cn } from "@/lib/utils";
+import type { Session, Metric, ServiceItem, GoalEvent } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
-function Router() {
+type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
+
+function MainApp() {
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [activeWeek, setActiveWeek] = useState(1);
+
+  const { data: sessions = [], isLoading: sessionsLoading } = useQuery<Session[]>({
+    queryKey: ["/api/sessions"],
+  });
+
+  const { data: metrics = [], isLoading: metricsLoading } = useQuery<Metric[]>({
+    queryKey: ["/api/metrics"],
+  });
+
+  const { data: serviceItems = [], isLoading: serviceLoading } = useQuery<ServiceItem[]>({
+    queryKey: ["/api/service-items"],
+  });
+
+  const { data: goal, isLoading: goalLoading } = useQuery<GoalEvent | null>({
+    queryKey: ["/api/goal"],
+  });
+
+  const handleWeekChange = async (week: number) => {
+    setActiveWeek(week);
+    try {
+      await apiRequest("PUT", "/api/settings/activeWeek", { value: week.toString() });
+    } catch {}
+  };
+
+  const isLoading = sessionsLoading || metricsLoading || serviceLoading || goalLoading;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-gradient-primary animate-pulse" />
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold tracking-tight text-brand-text">
+              Switch
+            </span>
+            <span className="text-xl font-bold text-gradient-primary">back</span>
+          </div>
+          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">
+            Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
-      {/* Fallback to 404 */}
-      <Route component={NotFound} />
-    </Switch>
+    <div className="min-h-screen text-brand-text font-sans pb-24">
+      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 sticky top-0 z-50 shadow-lg shadow-black/20 flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
+            <MountainSnow size={18} className="text-brand-bg" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight" data-testid="text-app-title">
+            Switch<span className="text-gradient-primary">back</span>
+          </h1>
+        </div>
+      </header>
+
+      <main className="max-w-lg mx-auto w-full pb-4 pt-4 relative">
+        {activeTab === "dashboard" && (
+          <Dashboard
+            sessions={sessions}
+            metrics={metrics}
+            goal={goal || undefined}
+            activeWeek={activeWeek}
+            onWeekChange={handleWeekChange}
+          />
+        )}
+        {activeTab === "plan" && (
+          <TrainingPlan sessions={sessions} activeWeek={activeWeek} />
+        )}
+        {activeTab === "metrics" && <Metrics metrics={metrics} />}
+        {activeTab === "service" && (
+          <ServiceTracker serviceItems={serviceItems} />
+        )}
+        {activeTab === "events" && (
+          <EventTracker goal={goal || undefined} />
+        )}
+      </main>
+
+      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 px-4 py-3 flex justify-between items-center z-30 pb-safe shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
+        <NavItem
+          icon={<Home size={22} />}
+          label="Dash"
+          isActive={activeTab === "dashboard"}
+          onClick={() => setActiveTab("dashboard")}
+          testId="nav-dashboard"
+        />
+        <NavItem
+          icon={<CalendarDays size={22} />}
+          label="Plan"
+          isActive={activeTab === "plan"}
+          onClick={() => setActiveTab("plan")}
+          testId="nav-plan"
+        />
+        <NavItem
+          icon={<MountainSnow size={24} />}
+          label="Events"
+          isActive={activeTab === "events"}
+          isHighlight={true}
+          onClick={() => setActiveTab("events")}
+          testId="nav-events"
+        />
+        <NavItem
+          icon={<Activity size={22} />}
+          label="Metrics"
+          isActive={activeTab === "metrics"}
+          onClick={() => setActiveTab("metrics")}
+          testId="nav-metrics"
+        />
+        <NavItem
+          icon={<Wrench size={22} />}
+          label="Bike"
+          isActive={activeTab === "service"}
+          onClick={() => setActiveTab("service")}
+          testId="nav-service"
+        />
+      </nav>
+    </div>
+  );
+}
+
+function NavItem({
+  icon,
+  label,
+  isActive,
+  isHighlight,
+  onClick,
+  testId,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  isActive: boolean;
+  isHighlight?: boolean;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center justify-center w-14 transition-all duration-300 relative",
+        isActive && !isHighlight
+          ? "text-brand-primary font-medium drop-shadow-[0_0_8px_rgba(65,209,255,0.8)]"
+          : "text-brand-muted",
+        isHighlight && "text-brand-text"
+      )}
+      data-testid={testId}
+    >
+      {isHighlight && (
+        <div className="absolute inset-0 bg-gradient-primary blur-lg opacity-20 -z-10 rounded-full scale-150" />
+      )}
+      <div
+        className={cn(
+          "mb-1 flex items-center justify-center",
+          isActive && !isHighlight && "scale-110",
+          isHighlight &&
+            "p-3 rounded-full bg-gradient-primary shadow-[0_0_15px_rgba(189,52,254,0.5)] -mt-6 ring-4 ring-brand-bg",
+          isActive &&
+            isHighlight &&
+            "scale-110 shadow-[0_0_25px_rgba(65,209,255,0.8)] ring-brand-panel"
+        )}
+      >
+        {icon}
+      </div>
+      <span
+        className={cn(
+          "text-[10px] uppercase tracking-wider",
+          isHighlight && "mt-1"
+        )}
+      >
+        {label}
+      </span>
+    </button>
   );
 }
 
@@ -21,7 +206,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <MainApp />
       </TooltipProvider>
     </QueryClientProvider>
   );

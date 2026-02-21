@@ -1,38 +1,144 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { eq } from "drizzle-orm";
+import { db } from "./db";
+import {
+  sessions,
+  metrics,
+  serviceItems,
+  goalEvents,
+  appSettings,
+  type Session,
+  type InsertSession,
+  type Metric,
+  type InsertMetric,
+  type ServiceItem,
+  type InsertServiceItem,
+  type GoalEvent,
+  type InsertGoalEvent,
+} from "@shared/schema";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getSessions(): Promise<Session[]>;
+  getSession(id: string): Promise<Session | undefined>;
+  upsertSession(session: InsertSession): Promise<Session>;
+  updateSession(id: string, updates: Partial<Session>): Promise<Session | undefined>;
+  upsertManySessions(sessionList: InsertSession[]): Promise<void>;
+
+  getMetrics(): Promise<Metric[]>;
+  createMetric(metric: InsertMetric): Promise<Metric>;
+
+  getServiceItems(): Promise<ServiceItem[]>;
+  upsertServiceItem(item: InsertServiceItem): Promise<ServiceItem>;
+  updateServiceItem(id: string, updates: Partial<ServiceItem>): Promise<ServiceItem | undefined>;
+
+  getGoal(): Promise<GoalEvent | null>;
+  upsertGoal(goal: InsertGoalEvent): Promise<GoalEvent>;
+
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getSessions(): Promise<Session[]> {
+    return db.select().from(sessions);
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getSession(id: string): Promise<Session | undefined> {
+    const [session] = await db.select().from(sessions).where(eq(sessions.id, id));
+    return session;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async upsertSession(session: InsertSession): Promise<Session> {
+    const [result] = await db
+      .insert(sessions)
+      .values(session)
+      .onConflictDoUpdate({
+        target: sessions.id,
+        set: session,
+      })
+      .returning();
+    return result;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateSession(id: string, updates: Partial<Session>): Promise<Session | undefined> {
+    const [result] = await db
+      .update(sessions)
+      .set(updates)
+      .where(eq(sessions.id, id))
+      .returning();
+    return result;
+  }
+
+  async upsertManySessions(sessionList: InsertSession[]): Promise<void> {
+    for (const session of sessionList) {
+      await this.upsertSession(session);
+    }
+  }
+
+  async getMetrics(): Promise<Metric[]> {
+    return db.select().from(metrics);
+  }
+
+  async createMetric(metric: InsertMetric): Promise<Metric> {
+    const [result] = await db.insert(metrics).values(metric).returning();
+    return result;
+  }
+
+  async getServiceItems(): Promise<ServiceItem[]> {
+    return db.select().from(serviceItems);
+  }
+
+  async upsertServiceItem(item: InsertServiceItem): Promise<ServiceItem> {
+    const [result] = await db
+      .insert(serviceItems)
+      .values(item)
+      .onConflictDoUpdate({
+        target: serviceItems.id,
+        set: item,
+      })
+      .returning();
+    return result;
+  }
+
+  async updateServiceItem(id: string, updates: Partial<ServiceItem>): Promise<ServiceItem | undefined> {
+    const [result] = await db
+      .update(serviceItems)
+      .set(updates)
+      .where(eq(serviceItems.id, id))
+      .returning();
+    return result;
+  }
+
+  async getGoal(): Promise<GoalEvent | null> {
+    const goals = await db.select().from(goalEvents);
+    return goals[0] ?? null;
+  }
+
+  async upsertGoal(goal: InsertGoalEvent): Promise<GoalEvent> {
+    const existing = await this.getGoal();
+    if (existing) {
+      await db.delete(goalEvents).where(eq(goalEvents.id, existing.id));
+    }
+    const [result] = await db.insert(goalEvents).values(goal).returning();
+    return result;
+  }
+
+  async getSetting(key: string): Promise<string | null> {
+    const [row] = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.key, key));
+    return row?.value ?? null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    await db
+      .insert(appSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value },
+      });
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
