@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
 import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
+import { getWorkoutDetails } from "./workout-library";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
@@ -158,7 +159,160 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/plan/load-default", async (_req, res) => {
+    try {
+      await storage.deleteAllSessions();
+      const goal = await storage.getGoal();
+      const targetDate = goal?.startDate || getDefaultTargetDate();
+      const raceDate = new Date(targetDate);
+      const planStart = new Date(raceDate);
+      planStart.setDate(planStart.getDate() - 12 * 7);
+      const plan = generatePlan(planStart);
+      await storage.upsertManySessions(plan);
+      res.json({ success: true, count: plan.length });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to load default plan" });
+    }
+  });
+
+  app.post("/api/plan/upload-csv", async (req, res) => {
+    try {
+      const { csv } = req.body;
+      if (!csv || typeof csv !== "string") {
+        return res.status(400).json({ error: "CSV data required" });
+      }
+      const sessions = parseCsvPlan(csv);
+      if (sessions.length === 0) {
+        return res.status(400).json({ error: "No valid sessions found in CSV" });
+      }
+      await storage.deleteAllSessions();
+      await storage.upsertManySessions(sessions);
+      res.json({ success: true, count: sessions.length });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Failed to parse CSV" });
+    }
+  });
+
+  app.get("/api/plan/templates", async (_req, res) => {
+    res.json([
+      {
+        id: "mtb-12week",
+        name: "12-Week MTB Race Prep",
+        description: "Progressive mountain bike training plan with base, build, peak, and taper phases. Includes strength work, interval sessions, and long rides.",
+        weeks: 12,
+        sessionsPerWeek: "3-4",
+      },
+    ]);
+  });
+
   return httpServer;
+}
+
+function parseCsvRecords(csv: string): string[][] {
+  const normalized = csv.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const records: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (normalized[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ",") {
+        current.push(field);
+        field = "";
+      } else if (char === "\n") {
+        current.push(field);
+        field = "";
+        if (current.some((c) => c.trim())) {
+          records.push(current);
+        }
+        current = [];
+      } else {
+        field += char;
+      }
+    }
+  }
+
+  current.push(field);
+  if (current.some((c) => c.trim())) {
+    records.push(current);
+  }
+
+  return records;
+}
+
+function parseCsvPlan(csv: string) {
+  const records = parseCsvRecords(csv);
+  if (records.length < 2) throw new Error("CSV must have a header row and at least one data row");
+
+  const header = records[0].map((h) => h.trim().toLowerCase());
+
+  const weekIdx = header.indexOf("week");
+  const dayIdx = header.indexOf("day");
+  const typeIdx = header.indexOf("type");
+  const descIdx = header.findIndex((h) => h === "description" || h === "desc");
+  const minsIdx = header.findIndex((h) => h === "minutes" || h === "mins" || h === "duration");
+  const zoneIdx = header.indexOf("zone");
+  const elevIdx = header.findIndex((h) => h === "elevation" || h === "elev");
+  const detailsIdx = header.findIndex((h) => h === "details" || h === "detailsmarkdown" || h === "details_markdown");
+
+  if (weekIdx === -1 || dayIdx === -1 || typeIdx === -1 || descIdx === -1 || minsIdx === -1) {
+    throw new Error("CSV must have columns: week, day, type, description, minutes");
+  }
+
+  const sessions: any[] = [];
+
+  for (let i = 1; i < records.length; i++) {
+    const cols = records[i];
+    const week = parseInt(cols[weekIdx]?.trim(), 10);
+    const day = cols[dayIdx]?.trim();
+    const type = cols[typeIdx]?.trim();
+    const description = cols[descIdx]?.trim();
+    const minutes = parseInt(cols[minsIdx]?.trim(), 10);
+
+    if (!week || !day || !type || !description || !minutes) continue;
+
+    const zone = zoneIdx >= 0 ? cols[zoneIdx]?.trim() || null : null;
+    const elevation = elevIdx >= 0 ? cols[elevIdx]?.trim() || null : null;
+    const details = detailsIdx >= 0 ? cols[detailsIdx]?.trim() || null : null;
+
+    const isStrength = type.toLowerCase().includes("strength");
+
+    sessions.push({
+      id: `csv-w${week}-${day.toLowerCase()}-${i}`,
+      week,
+      day,
+      type,
+      description,
+      minutes,
+      zone,
+      elevation,
+      strength: isStrength,
+      completed: false,
+      rpe: null,
+      notes: null,
+      scheduledDate: null,
+      completedAt: null,
+      detailsMarkdown: details || getWorkoutDetails(type, description, week),
+    });
+  }
+
+  return sessions;
 }
 
 async function seedTrainingPlan() {
@@ -357,6 +511,7 @@ function generatePlan(startDate: Date) {
         notes: null,
         scheduledDate: dateStr,
         completedAt: null,
+        detailsMarkdown: getWorkoutDetails(s.type, s.description, week),
       });
     }
   }

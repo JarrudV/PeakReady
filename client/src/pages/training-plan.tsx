@@ -9,10 +9,13 @@ import {
   Save,
   Edit3,
   X,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { WorkoutDetailModal } from "@/components/workout-detail-modal";
+import { PlanManager } from "@/components/plan-manager";
 
 interface Props {
   sessions: Session[];
@@ -22,6 +25,7 @@ interface Props {
 export function TrainingPlan({ sessions, activeWeek }: Props) {
   const weeklySessions = sessions.filter((s) => s.week === activeWeek);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingSession, setViewingSession] = useState<Session | null>(null);
   const { toast } = useToast();
 
   const handleToggleComplete = async (session: Session) => {
@@ -56,6 +60,8 @@ export function TrainingPlan({ sessions, activeWeek }: Props) {
         Week {activeWeek} Plan
       </h2>
 
+      <PlanManager sessionCount={sessions.length} />
+
       <div className="flex flex-col gap-4">
         {weeklySessions.map((session) => (
           <SessionCard
@@ -66,6 +72,7 @@ export function TrainingPlan({ sessions, activeWeek }: Props) {
             onSave={(updates) => handleSaveEdit(session.id, updates)}
             onCancel={() => setEditingId(null)}
             onToggleComplete={() => handleToggleComplete(session)}
+            onViewDetails={() => setViewingSession(session)}
           />
         ))}
 
@@ -75,6 +82,13 @@ export function TrainingPlan({ sessions, activeWeek }: Props) {
           </div>
         )}
       </div>
+
+      {viewingSession && (
+        <WorkoutDetailModal
+          session={viewingSession}
+          onClose={() => setViewingSession(null)}
+        />
+      )}
     </div>
   );
 }
@@ -86,6 +100,7 @@ function SessionCard({
   onSave,
   onCancel,
   onToggleComplete,
+  onViewDetails,
 }: {
   session: Session;
   isEditing: boolean;
@@ -93,6 +108,7 @@ function SessionCard({
   onSave: (updates: Partial<Session>) => void;
   onCancel: () => void;
   onToggleComplete: () => void;
+  onViewDetails: () => void;
 }) {
   const [editMinutes, setEditMinutes] = useState(session.minutes);
   const [editRpe, setEditRpe] = useState(session.rpe?.toString() || "");
@@ -122,7 +138,11 @@ function SessionCard({
       )}
       <div className="p-4 relative z-10">
         <div className="flex justify-between items-start mb-3">
-          <div>
+          <button
+            onClick={onViewDetails}
+            className="text-left flex-1 focus:outline-none group"
+            data-testid={`button-view-${session.id}`}
+          >
             <span className="text-xs font-bold uppercase tracking-wider text-brand-muted mb-1 block">
               {session.day}
               {session.scheduledDate && (
@@ -133,13 +153,18 @@ function SessionCard({
             </span>
             <h3
               className={cn(
-                "text-lg font-bold leading-tight",
+                "text-lg font-bold leading-tight group-hover:text-brand-primary transition-colors",
                 session.completed && "text-brand-muted"
               )}
             >
               {session.description}
             </h3>
-          </div>
+            {session.detailsMarkdown && (
+              <span className="text-[10px] uppercase tracking-widest font-bold text-brand-primary/60 flex items-center gap-1 mt-1">
+                <Eye size={10} /> Tap for workout details
+              </span>
+            )}
+          </button>
           <button
             onClick={onToggleComplete}
             className="flex-shrink-0 ml-2 focus:outline-none transition-transform"

@@ -22,6 +22,7 @@ export interface IStorage {
   upsertSession(session: InsertSession): Promise<Session>;
   updateSession(id: string, updates: Partial<Session>): Promise<Session | undefined>;
   upsertManySessions(sessionList: InsertSession[]): Promise<void>;
+  deleteAllSessions(): Promise<void>;
 
   getMetrics(): Promise<Metric[]>;
   createMetric(metric: InsertMetric): Promise<Metric>;
@@ -72,6 +73,10 @@ export class DatabaseStorage implements IStorage {
     for (const session of sessionList) {
       await this.upsertSession(session);
     }
+  }
+
+  async deleteAllSessions(): Promise<void> {
+    await db.delete(sessions);
   }
 
   async getMetrics(): Promise<Metric[]> {
