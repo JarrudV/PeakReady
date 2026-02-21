@@ -4,6 +4,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
 import { getWorkoutDetails } from "./workout-library";
+import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
@@ -190,6 +191,79 @@ export async function registerRoutes(
       res.json({ success: true, count: sessions.length });
     } catch (err: any) {
       res.status(400).json({ error: err.message || "Failed to parse CSV" });
+    }
+  });
+
+  app.get("/api/strava/status", async (_req, res) => {
+    const lastSync = await storage.getSetting("stravaLastSync");
+    const hasScope = await storage.getSetting("stravaHasActivityScope");
+    res.json({
+      configured: isStravaConfigured(),
+      lastSync,
+      hasActivityScope: hasScope === "true",
+    });
+  });
+
+  app.get("/api/strava/auth-url", async (req, res) => {
+    try {
+      const protocol = req.headers["x-forwarded-proto"] || "http";
+      const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+      const redirectUri = `${protocol}://${host}/api/strava/callback`;
+      const url = getStravaAuthUrl(redirectUri);
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/strava/callback", async (req, res) => {
+    const code = req.query.code as string;
+    const error = req.query.error as string;
+
+    if (error) {
+      return res.redirect("/?strava=denied");
+    }
+
+    if (!code) {
+      return res.status(400).send("Missing authorization code");
+    }
+
+    try {
+      const tokenData = await exchangeCodeForToken(code);
+      process.env.STRAVA_REFRESH_TOKEN = tokenData.refresh_token;
+      await storage.setSetting("stravaRefreshToken", tokenData.refresh_token);
+      await storage.setSetting("stravaHasActivityScope", "true");
+      res.redirect("/?strava=connected");
+    } catch (err: any) {
+      console.error("Strava callback error:", err.message);
+      res.redirect("/?strava=error");
+    }
+  });
+
+  app.get("/api/strava/activities", async (_req, res) => {
+    try {
+      const activities = await storage.getStravaActivities();
+      res.json(activities);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch activities" });
+    }
+  });
+
+  app.post("/api/strava/sync", async (_req, res) => {
+    if (!isStravaConfigured()) {
+      return res.status(400).json({ error: "Strava not configured" });
+    }
+    const savedRefresh = await storage.getSetting("stravaRefreshToken");
+    if (savedRefresh) {
+      process.env.STRAVA_REFRESH_TOKEN = savedRefresh;
+    }
+    try {
+      const result = await syncStravaActivities();
+      await storage.setSetting("stravaLastSync", new Date().toISOString());
+      res.json(result);
+    } catch (err: any) {
+      console.error("Strava sync error:", err.message);
+      res.status(500).json({ error: err.message || "Strava sync failed" });
     }
   });
 

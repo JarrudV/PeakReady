@@ -54,6 +54,27 @@ export const goalEvents = pgTable("goal_events", {
   createdAt: text("created_at").notNull(),
 });
 
+export const stravaActivities = pgTable("strava_activities", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  stravaId: text("strava_id").notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  sportType: text("sport_type"),
+  startDate: text("start_date").notNull(),
+  movingTime: integer("moving_time").notNull(),
+  elapsedTime: integer("elapsed_time"),
+  distance: real("distance").notNull(),
+  totalElevationGain: real("total_elevation_gain"),
+  averageSpeed: real("average_speed"),
+  maxSpeed: real("max_speed"),
+  averageHeartrate: real("average_heartrate"),
+  maxHeartrate: real("max_heartrate"),
+  averageWatts: real("average_watts"),
+  kilojoules: real("kilojoules"),
+  sufferScore: integer("suffer_score"),
+  syncedAt: text("synced_at").notNull(),
+});
+
 export const appSettings = pgTable("app_settings", {
   key: varchar("key", { length: 64 }).primaryKey(),
   value: text("value").notNull(),
@@ -63,6 +84,7 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({ });
 export const insertMetricSchema = createInsertSchema(metrics).omit({ id: true });
 export const insertServiceItemSchema = createInsertSchema(serviceItems).omit({ });
 export const insertGoalEventSchema = createInsertSchema(goalEvents).omit({ });
+export const insertStravaActivitySchema = createInsertSchema(stravaActivities).omit({ });
 
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
@@ -72,6 +94,8 @@ export type ServiceItem = typeof serviceItems.$inferSelect;
 export type InsertServiceItem = z.infer<typeof insertServiceItemSchema>;
 export type GoalEvent = typeof goalEvents.$inferSelect;
 export type InsertGoalEvent = z.infer<typeof insertGoalEventSchema>;
+export type StravaActivity = typeof stravaActivities.$inferSelect;
+export type InsertStravaActivity = z.infer<typeof insertStravaActivitySchema>;
 
 export type SessionType = "Ride" | "Long Ride" | "Strength" | "Rest";
 

@@ -16,6 +16,7 @@ import {
   Activity as ActivityIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StravaPanel } from "@/components/strava-panel";
 
 interface Props {
   sessions: Session[];
@@ -296,6 +297,8 @@ export function Dashboard({
           </div>
         </div>
       </div>
+
+      <StravaPanel />
     </div>
   );
 }

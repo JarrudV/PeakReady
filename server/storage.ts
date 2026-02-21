@@ -6,6 +6,7 @@ import {
   serviceItems,
   goalEvents,
   appSettings,
+  stravaActivities,
   type Session,
   type InsertSession,
   type Metric,
@@ -14,6 +15,8 @@ import {
   type InsertServiceItem,
   type GoalEvent,
   type InsertGoalEvent,
+  type StravaActivity,
+  type InsertStravaActivity,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -36,6 +39,10 @@ export interface IStorage {
 
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+
+  getStravaActivities(): Promise<StravaActivity[]>;
+  upsertStravaActivity(activity: InsertStravaActivity): Promise<StravaActivity>;
+  deleteAllStravaActivities(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -143,6 +150,26 @@ export class DatabaseStorage implements IStorage {
         target: appSettings.key,
         set: { value },
       });
+  }
+
+  async getStravaActivities(): Promise<StravaActivity[]> {
+    return db.select().from(stravaActivities);
+  }
+
+  async upsertStravaActivity(activity: InsertStravaActivity): Promise<StravaActivity> {
+    const [result] = await db
+      .insert(stravaActivities)
+      .values(activity)
+      .onConflictDoUpdate({
+        target: stravaActivities.id,
+        set: activity,
+      })
+      .returning();
+    return result;
+  }
+
+  async deleteAllStravaActivities(): Promise<void> {
+    await db.delete(stravaActivities);
   }
 }
 
