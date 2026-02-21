@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { Session, Metric, GoalEvent } from "@shared/schema";
 import {
   weekStats,
@@ -17,6 +17,48 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StravaPanel } from "@/components/strava-panel";
+
+const DAILY_QUOTES = [
+  { text: "The pain you feel today will be the strength you feel tomorrow.", author: "Arnold Schwarzenegger" },
+  { text: "It never gets easier, you just get faster.", author: "Greg LeMond" },
+  { text: "Suffer now and live the rest of your life as a champion.", author: "Muhammad Ali" },
+  { text: "The bicycle is the most civilized conveyance known to man.", author: "Iris Murdoch" },
+  { text: "Life is like riding a bicycle. To keep your balance, you must keep moving.", author: "Albert Einstein" },
+  { text: "Nothing compares to the simple pleasure of riding a bike.", author: "John F. Kennedy" },
+  { text: "Persistence can change failure into extraordinary achievement.", author: "Marv Levy" },
+  { text: "Don't count the days, make the days count.", author: "Muhammad Ali" },
+  { text: "When my legs hurt, I say: Shut up legs! Do what I tell you to do!", author: "Jens Voigt" },
+  { text: "Champions keep playing until they get it right.", author: "Billie Jean King" },
+  { text: "The only impossible journey is the one you never begin.", author: "Tony Robbins" },
+  { text: "Strength does not come from winning. It comes from the struggles.", author: "Mahatma Gandhi" },
+  { text: "A year from now you will wish you had started today.", author: "Karen Lamb" },
+  { text: "The hardest part is showing up. After that, the ride takes care of itself.", author: "Unknown" },
+  { text: "The mountains are calling and I must go.", author: "John Muir" },
+  { text: "Every ride is a chance to feel alive.", author: "Unknown" },
+  { text: "Success isn't always about greatness. It's about consistency.", author: "Dwayne Johnson" },
+  { text: "Sore today. Strong tomorrow.", author: "Unknown" },
+  { text: "Push yourself, because no one else is going to do it for you.", author: "Unknown" },
+  { text: "Ride as much or as little, as long or as short as you feel. But ride.", author: "Eddy Merckx" },
+  { text: "The best rides are the ones where you bite off much more than you can chew.", author: "Doug Bradbury" },
+  { text: "It's not about the bike.", author: "Lance Armstrong" },
+  { text: "Sweat is just fat crying.", author: "Unknown" },
+  { text: "Cycling is the new golf. It's the new networking.", author: "Patrick Dempsey" },
+  { text: "Ride your bike, ride your bike, ride your bike.", author: "Fausto Coppi" },
+  { text: "The will to win means nothing without the will to prepare.", author: "Juma Ikangaa" },
+  { text: "What doesn't kill you makes you stronger.", author: "Friedrich Nietzsche" },
+  { text: "When the spirits are low, when the day appears dark, just mount a bicycle.", author: "Arthur Conan Doyle" },
+  { text: "Somewhere behind the athlete you've become is the child who fell in love with the sport.", author: "Unknown" },
+  { text: "The real workout starts when you want to stop.", author: "Ronnie Coleman" },
+  { text: "Think of what it would mean to have that body, that health, that freedom.", author: "Unknown" },
+];
+
+function getDailyQuote() {
+  const now = new Date();
+  const dayOfYear = Math.floor(
+    (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000
+  );
+  return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
+}
 
 interface Props {
   sessions: Session[];
@@ -55,6 +97,7 @@ export function Dashboard({
   }
 
   const latestFatigue = latestMetric(metrics, "fatigue");
+  const dailyQuote = useMemo(() => getDailyQuote(), []);
 
   return (
     <div className="p-4 space-y-6" data-testid="dashboard-view">
@@ -84,6 +127,16 @@ export function Dashboard({
             size={16}
           />
         </div>
+      </div>
+
+      <div className="glass-panel px-5 py-4 relative overflow-hidden border-l-2 border-brand-primary/40" data-testid="daily-quote">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-primary opacity-10 blur-3xl -mr-8 -mt-8 rounded-full pointer-events-none" />
+        <p className="text-sm italic text-brand-text/90 leading-relaxed relative z-10" data-testid="text-quote">
+          "{dailyQuote.text}"
+        </p>
+        <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mt-1.5 relative z-10" data-testid="text-quote-author">
+          — {dailyQuote.author}
+        </p>
       </div>
 
       <div className="glass-panel p-6 shadow-[0_0_20px_rgba(189,52,254,0.15)] relative overflow-hidden">
