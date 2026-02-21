@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Session } from "@shared/schema";
+import type { Session, GoalEvent } from "@shared/schema";
 import {
   CheckCircle2,
   Circle,
@@ -10,22 +10,26 @@ import {
   Edit3,
   X,
   Eye,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { WorkoutDetailModal } from "@/components/workout-detail-modal";
 import { PlanManager } from "@/components/plan-manager";
+import { AIPlanBuilder } from "@/components/ai-plan-builder";
 
 interface Props {
   sessions: Session[];
   activeWeek: number;
+  goal?: GoalEvent;
 }
 
-export function TrainingPlan({ sessions, activeWeek }: Props) {
+export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
   const weeklySessions = sessions.filter((s) => s.week === activeWeek);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
+  const [showAIBuilder, setShowAIBuilder] = useState(false);
   const { toast } = useToast();
 
   const handleToggleComplete = async (session: Session) => {
@@ -62,6 +66,15 @@ export function TrainingPlan({ sessions, activeWeek }: Props) {
 
       <PlanManager sessionCount={sessions.length} />
 
+      <button
+        onClick={() => setShowAIBuilder(true)}
+        className="w-full py-3 rounded-lg bg-gradient-primary text-white text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(65,209,255,0.2)] hover:shadow-[0_0_25px_rgba(65,209,255,0.4)] transition-all"
+        data-testid="button-open-ai-builder"
+      >
+        <Sparkles size={14} />
+        Build Plan with AI
+      </button>
+
       <div className="flex flex-col gap-4">
         {weeklySessions.map((session) => (
           <SessionCard
@@ -87,6 +100,13 @@ export function TrainingPlan({ sessions, activeWeek }: Props) {
         <WorkoutDetailModal
           session={viewingSession}
           onClose={() => setViewingSession(null)}
+        />
+      )}
+
+      {showAIBuilder && (
+        <AIPlanBuilder
+          onClose={() => setShowAIBuilder(false)}
+          goal={goal}
         />
       )}
     </div>

@@ -62,6 +62,7 @@ Preferred communication style: Simple, everyday language.
 4. **Session-based training plan**: Sessions are pre-seeded with week numbers and can be toggled complete, edited for RPE/notes — the plan is structured around weeks leading to a goal event
 5. **Strava integration**: OAuth flow with token refresh. Syncs ride activities from Strava API. Service in `server/strava.ts`, panel UI in `client/src/components/strava-panel.tsx`
 6. **Workout library**: 17 detailed workout templates with markdown instructions. Library in `server/workout-library.ts`, modal in `client/src/components/workout-detail-modal.tsx`
+7. **AI Plan Builder**: Uses Google Gemini (via Replit AI Integrations) to generate personalized training plans. 3-step form collects event info, athlete profile, and equipment/schedule preferences. Generator in `server/ai-plan-generator.ts`, UI in `client/src/components/ai-plan-builder.tsx`
 
 # External Dependencies
 
@@ -71,3 +72,4 @@ Preferred communication style: Simple, everyday language.
 - **Replit plugins** (dev only): `@replit/vite-plugin-runtime-error-modal`, `@replit/vite-plugin-cartographer`, `@replit/vite-plugin-dev-banner` — only active in development on Replit
 - **Recharts**: Client-side charting library for metrics visualization
 - **date-fns**: Date manipulation utilities
+- **@google/genai**: Google Gemini AI SDK for AI plan generation (via Replit AI Integrations, no separate API key needed)

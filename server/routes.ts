@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
 import { getWorkoutDetails } from "./workout-library";
 import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
+import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
@@ -264,6 +265,42 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Strava sync error:", err.message);
       res.status(500).json({ error: err.message || "Strava sync failed" });
+    }
+  });
+
+  const aiPlanSchema = z.object({
+    eventName: z.string().min(1),
+    eventDate: z.string().min(1),
+    eventDistance: z.number().positive().optional(),
+    eventElevation: z.number().positive().optional(),
+    fitnessLevel: z.enum(["beginner", "intermediate", "advanced"]),
+    goals: z.array(z.string()).min(1),
+    currentWeight: z.number().positive().optional(),
+    targetWeight: z.number().positive().optional(),
+    daysPerWeek: z.number().int().min(2).max(7).default(4),
+    hoursPerWeek: z.number().min(2).max(30).default(8),
+    equipment: z.enum(["gym", "home_full", "home_minimal", "no_equipment"]).default("home_minimal"),
+    injuries: z.string().optional(),
+    additionalNotes: z.string().optional(),
+  });
+
+  app.post("/api/plan/generate-ai", async (req, res) => {
+    try {
+      const parsed = aiPlanSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Event name, date, fitness level, and at least one goal are required" });
+      }
+      const planReq: PlanRequest = parsed.data;
+
+      const sessions = await generateAIPlan(planReq);
+
+      await storage.deleteAllSessions();
+      await storage.upsertManySessions(sessions);
+
+      res.json({ success: true, count: sessions.length });
+    } catch (err: any) {
+      console.error("AI plan generation error:", err.message);
+      res.status(500).json({ error: err.message || "Failed to generate AI plan" });
     }
   });
 

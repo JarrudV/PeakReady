@@ -104,7 +104,7 @@ function MainApp() {
           />
         )}
         {activeTab === "plan" && (
-          <TrainingPlan sessions={sessions} activeWeek={activeWeek} />
+          <TrainingPlan sessions={sessions} activeWeek={activeWeek} goal={goal || undefined} />
         )}
         {activeTab === "metrics" && <Metrics metrics={metrics} />}
         {activeTab === "service" && (
