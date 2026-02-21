@@ -18,6 +18,7 @@ export const sessions = pgTable("sessions", {
   notes: text("notes"),
   scheduledDate: text("scheduled_date"),
   completedAt: text("completed_at"),
+  detailsMarkdown: text("details_markdown"),
 });
 
 export const metrics = pgTable("metrics", {
