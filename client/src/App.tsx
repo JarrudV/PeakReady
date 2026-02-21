@@ -9,12 +9,15 @@ import {
   Activity,
   Wrench,
   MountainSnow,
+  User,
 } from "lucide-react";
 import { Dashboard } from "@/pages/dashboard";
 import { TrainingPlan } from "@/pages/training-plan";
 import { Metrics } from "@/pages/metrics";
 import { ServiceTracker } from "@/pages/service-tracker";
 import { EventTracker } from "@/pages/event-tracker";
+import { LoginPage } from "@/pages/login";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Session, Metric, ServiceItem, GoalEvent } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -22,11 +25,13 @@ import { apiRequest } from "@/lib/queryClient";
 type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
 
 function MainApp() {
+  const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [activeWeek, setActiveWeek] = useState(1);
 
   const { data: savedWeek } = useQuery<{ value: string | null }>({
     queryKey: ["/api/settings", "activeWeek"],
+    enabled: isAuthenticated,
   });
 
   useEffect(() => {
@@ -38,18 +43,22 @@ function MainApp() {
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery<Session[]>({
     queryKey: ["/api/sessions"],
+    enabled: isAuthenticated,
   });
 
   const { data: metrics = [], isLoading: metricsLoading } = useQuery<Metric[]>({
     queryKey: ["/api/metrics"],
+    enabled: isAuthenticated,
   });
 
   const { data: serviceItems = [], isLoading: serviceLoading } = useQuery<ServiceItem[]>({
     queryKey: ["/api/service-items"],
+    enabled: isAuthenticated,
   });
 
   const { data: goal, isLoading: goalLoading } = useQuery<GoalEvent | null>({
     queryKey: ["/api/goal"],
+    enabled: isAuthenticated,
   });
 
   const handleWeekChange = async (week: number) => {
@@ -58,6 +67,29 @@ function MainApp() {
       await apiRequest("PUT", "/api/settings/activeWeek", { value: week.toString() });
     } catch {}
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-gradient-primary animate-pulse" />
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold tracking-tight text-brand-text">
+              Peak
+            </span>
+            <span className="text-xl font-bold text-gradient-primary">Ready</span>
+          </div>
+          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">
+            Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
 
   const isLoading = sessionsLoading || metricsLoading || serviceLoading || goalLoading;
 
@@ -68,9 +100,9 @@ function MainApp() {
           <div className="w-12 h-12 rounded-full bg-gradient-primary animate-pulse" />
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold tracking-tight text-brand-text">
-              Switch
+              Peak
             </span>
-            <span className="text-xl font-bold text-gradient-primary">back</span>
+            <span className="text-xl font-bold text-gradient-primary">Ready</span>
           </div>
           <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">
             Loading...
@@ -82,15 +114,33 @@ function MainApp() {
 
   return (
     <div className="min-h-screen text-brand-text font-sans pb-24">
-      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-center">
+      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-between">
+        <div className="w-9" />
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
             <MountainSnow size={18} className="text-brand-bg" />
           </div>
           <h1 className="text-xl font-bold tracking-tight" data-testid="text-app-title">
-            Switch<span className="text-gradient-primary">back</span>
+            Peak<span className="text-gradient-primary">Ready</span>
           </h1>
         </div>
+        <button
+          onClick={() => logout()}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden"
+          title="Sign out"
+          data-testid="button-logout"
+        >
+          {user?.profileImageUrl ? (
+            <img
+              src={user.profileImageUrl}
+              alt=""
+              className="w-9 h-9 rounded-full object-cover"
+              data-testid="img-user-avatar"
+            />
+          ) : (
+            <User size={18} />
+          )}
+        </button>
       </header>
 
       <main className="max-w-lg mx-auto w-full pb-4 pt-4 relative">

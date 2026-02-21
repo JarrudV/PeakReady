@@ -1,6 +1,6 @@
 {
-  "name": "Switchback",
-  "short_name": "Switchback",
+  "name": "PeakReady",
+  "short_name": "PeakReady",
   "description": "Mountain bike training tracker",
   "start_url": "/",
   "display": "standalone",

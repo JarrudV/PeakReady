@@ -98,6 +98,7 @@ export type StravaActivity = typeof stravaActivities.$inferSelect;
 export type InsertStravaActivity = z.infer<typeof insertStravaActivitySchema>;
 
 export * from "./models/chat";
+export * from "./models/auth";
 
 export type SessionType = "Ride" | "Long Ride" | "Strength" | "Rest";
 

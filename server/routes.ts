@@ -6,6 +6,7 @@ import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } fr
 import { getWorkoutDetails } from "./workout-library";
 import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
+import { isAuthenticated } from "./replit_integrations/auth";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
@@ -28,6 +29,14 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.use("/api", (req, res, next) => {
+    const publicPaths = ["/api/login", "/api/logout", "/api/callback", "/api/auth/"];
+    if (publicPaths.some(p => req.path.startsWith(p))) {
+      return next();
+    }
+    return isAuthenticated(req, res, next);
+  });
+
   app.get("/api/sessions", async (_req, res) => {
     try {
       const sessions = await storage.getSessions();

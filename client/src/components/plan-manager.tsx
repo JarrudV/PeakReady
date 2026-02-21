@@ -89,7 +89,7 @@ export function PlanManager({ sessionCount }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "switchback-plan-template.csv";
+    a.download = "peakready-plan-template.csv";
     a.click();
     URL.revokeObjectURL(url);
   };

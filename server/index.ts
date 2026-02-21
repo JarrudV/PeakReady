@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -60,6 +61,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await setupAuth(app);
+  registerAuthRoutes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

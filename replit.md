@@ -1,6 +1,6 @@
 # Overview
 
-This is a **cycling/fitness training tracker** application ("Switchback") built as a full-stack TypeScript project. It helps users follow a structured training plan leading up to a goal event (like a cycling race or mountain ride). The app tracks weekly training sessions, body metrics (weight, resting HR, fatigue), bike service/maintenance items, goal event countdown, and **Strava ride data**. It features a dark space-themed dashboard with glassmorphism panels, neon gradients, and a mobile-friendly tab-based navigation.
+This is a **cycling/fitness training tracker** application ("PeakReady") built as a full-stack TypeScript project. It helps users follow a structured training plan leading up to a goal event (like a cycling race or mountain ride). The app tracks weekly training sessions, body metrics (weight, resting HR, fatigue), bike service/maintenance items, goal event countdown, and **Strava ride data**. It features a dark space-themed dashboard with glassmorphism panels, neon gradients, and a mobile-friendly tab-based navigation.
 
 # User Preferences
 
@@ -63,6 +63,7 @@ Preferred communication style: Simple, everyday language.
 5. **Strava integration**: OAuth flow with token refresh. Syncs ride activities from Strava API. Service in `server/strava.ts`, panel UI in `client/src/components/strava-panel.tsx`
 6. **Workout library**: 17 detailed workout templates with markdown instructions. Library in `server/workout-library.ts`, modal in `client/src/components/workout-detail-modal.tsx`
 7. **AI Plan Builder**: Uses Google Gemini (via Replit AI Integrations) to generate personalized training plans. 3-step form collects event info, athlete profile, and equipment/schedule preferences. Generator in `server/ai-plan-generator.ts`, UI in `client/src/components/ai-plan-builder.tsx`
+8. **Authentication**: Replit Auth (OIDC) for user authentication. Login page at `client/src/pages/login.tsx`, auth hook at `client/src/hooks/use-auth.ts`. Auth tables (`users`, `auth_sessions`) defined in `shared/models/auth.ts`. All `/api/` routes protected with `isAuthenticated` middleware (auth routes exempted). Auth integration files in `server/replit_integrations/auth/`.
 
 # External Dependencies
 
