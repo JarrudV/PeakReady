@@ -1,6 +1,25 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { z } from "zod";
 import { storage } from "./storage";
+import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
+
+const sessionUpdateSchema = z.object({
+  completed: z.boolean().optional(),
+  completedAt: z.string().nullable().optional(),
+  rpe: z.number().min(1).max(10).nullable().optional(),
+  notes: z.string().nullable().optional(),
+  minutes: z.number().positive().optional(),
+});
+
+const serviceItemUpdateSchema = z.object({
+  status: z.string().optional(),
+  date: z.string().nullable().optional(),
+});
+
+const settingValueSchema = z.object({
+  value: z.string(),
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -17,7 +36,9 @@ export async function registerRoutes(
 
   app.patch("/api/sessions/:id", async (req, res) => {
     try {
-      const session = await storage.updateSession(req.params.id, req.body);
+      const parsed = sessionUpdateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const session = await storage.updateSession(req.params.id, parsed.data);
       if (!session) return res.status(404).json({ error: "Session not found" });
       res.json(session);
     } catch (err) {
@@ -36,7 +57,9 @@ export async function registerRoutes(
 
   app.post("/api/metrics", async (req, res) => {
     try {
-      const metric = await storage.createMetric(req.body);
+      const parsed = insertMetricSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const metric = await storage.createMetric(parsed.data);
       res.json(metric);
     } catch (err) {
       res.status(500).json({ error: "Failed to create metric" });
@@ -54,7 +77,9 @@ export async function registerRoutes(
 
   app.post("/api/service-items", async (req, res) => {
     try {
-      const item = await storage.upsertServiceItem(req.body);
+      const parsed = insertServiceItemSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const item = await storage.upsertServiceItem(parsed.data);
       res.json(item);
     } catch (err) {
       res.status(500).json({ error: "Failed to create service item" });
@@ -63,7 +88,9 @@ export async function registerRoutes(
 
   app.patch("/api/service-items/:id", async (req, res) => {
     try {
-      const item = await storage.updateServiceItem(req.params.id, req.body);
+      const parsed = serviceItemUpdateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const item = await storage.updateServiceItem(req.params.id, parsed.data);
       if (!item) return res.status(404).json({ error: "Item not found" });
       res.json(item);
     } catch (err) {
@@ -82,7 +109,9 @@ export async function registerRoutes(
 
   app.post("/api/goal", async (req, res) => {
     try {
-      const goal = await storage.upsertGoal(req.body);
+      const parsed = insertGoalEventSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const goal = await storage.upsertGoal(parsed.data);
       res.json(goal);
     } catch (err) {
       res.status(500).json({ error: "Failed to create goal" });
@@ -91,7 +120,9 @@ export async function registerRoutes(
 
   app.put("/api/goal", async (req, res) => {
     try {
-      const goal = await storage.upsertGoal(req.body);
+      const parsed = insertGoalEventSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const goal = await storage.upsertGoal(parsed.data);
       res.json(goal);
     } catch (err) {
       res.status(500).json({ error: "Failed to update goal" });
@@ -109,7 +140,9 @@ export async function registerRoutes(
 
   app.put("/api/settings/:key", async (req, res) => {
     try {
-      await storage.setSetting(req.params.key, req.body.value);
+      const parsed = settingValueSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      await storage.setSetting(req.params.key, parsed.data.value);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to save setting" });

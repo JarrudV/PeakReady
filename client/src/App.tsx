@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -24,6 +24,17 @@ type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
 function MainApp() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [activeWeek, setActiveWeek] = useState(1);
+
+  const { data: savedWeek } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "activeWeek"],
+  });
+
+  useEffect(() => {
+    if (savedWeek?.value) {
+      const parsed = parseInt(savedWeek.value, 10);
+      if (parsed >= 1 && parsed <= 12) setActiveWeek(parsed);
+    }
+  }, [savedWeek]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery<Session[]>({
     queryKey: ["/api/sessions"],
