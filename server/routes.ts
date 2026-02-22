@@ -7,6 +7,7 @@ import { getWorkoutDetails } from "./workout-library";
 import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { getPublicVapidKey, isPushConfigured } from "./push";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
@@ -20,10 +21,32 @@ const sessionUpdateSchema = z.object({
 const serviceItemUpdateSchema = z.object({
   status: z.string().optional(),
   date: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 const settingValueSchema = z.object({
   value: z.string(),
+});
+
+const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string(),
+    auth: z.string(),
+  }),
+});
+
+const reminderSettingsSchema = z.object({
+  timezone: z.string().min(1),
+  longRideEveningBeforeEnabled: z.boolean(),
+  serviceDueDateEnabled: z.boolean(),
+  goalOneWeekCountdownEnabled: z.boolean(),
+});
+
+const markNotificationReadSchema = z.object({
+  id: z.string().optional(),
+  all: z.boolean().optional(),
 });
 
 function requireUserId(req: Request, res: Response): string | null {
@@ -192,6 +215,123 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Failed to save setting" });
+    }
+  });
+
+  app.get("/api/push/status", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const subscriptions = await storage.listPushSubscriptions(userId);
+      res.json({
+        configured: isPushConfigured(),
+        vapidPublicKey: getPublicVapidKey(),
+        subscribed: subscriptions.length > 0,
+        subscriptionCount: subscriptions.length,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch push status" });
+    }
+  });
+
+  app.post("/api/push/subscribe", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const parsed = pushSubscriptionSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+
+      await storage.upsertPushSubscription(userId, parsed.data.endpoint, parsed.data);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to save push subscription" });
+    }
+  });
+
+  app.post("/api/push/unsubscribe", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : undefined;
+      await storage.removePushSubscription(userId, endpoint);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to unsubscribe push" });
+    }
+  });
+
+  app.get("/api/reminders/settings", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const settings = await storage.getReminderSettings(userId);
+      res.json(
+        settings ?? {
+          timezone: "UTC",
+          longRideEveningBeforeEnabled: false,
+          serviceDueDateEnabled: false,
+          goalOneWeekCountdownEnabled: false,
+        },
+      );
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch reminder settings" });
+    }
+  });
+
+  app.post("/api/reminders/settings", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const parsed = reminderSettingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const saved = await storage.upsertReminderSettings(userId, parsed.data);
+      res.json(saved);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to save reminder settings" });
+    }
+  });
+
+  app.get("/api/notifications", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const notifications = await storage.listInAppNotifications(userId);
+      res.json(notifications);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post("/api/notifications/read", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const parsed = markNotificationReadSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+
+      if (parsed.data.all) {
+        const notifications = await storage.listInAppNotifications(userId);
+        await Promise.all(notifications.map((item) => storage.markInAppNotificationRead(userId, item.id)));
+      } else if (parsed.data.id) {
+        await storage.markInAppNotificationRead(userId, parsed.data.id);
+      } else {
+        return res.status(400).json({ error: "Notification id or all=true is required" });
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to mark notifications read" });
+    }
+  });
+
+  app.post("/api/notifications/clear", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      await storage.clearInAppNotifications(userId);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to clear notifications" });
     }
   });
 

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   sessions,
@@ -7,6 +7,10 @@ import {
   goalEvents,
   appSettings,
   stravaActivities,
+  pushSubscriptions,
+  reminderSettings,
+  inAppNotifications,
+  notificationDispatches,
   type Session,
   type InsertSession,
   type Metric,
@@ -17,6 +21,9 @@ import {
   type InsertGoalEvent,
   type StravaActivity,
   type InsertStravaActivity,
+  type PushSubscriptionRecord,
+  type ReminderSettings,
+  type InAppNotification,
 } from "@shared/schema";
 
 const LEGACY_USER_ID = "__legacy__";
@@ -45,6 +52,27 @@ export interface IStorage {
   getStravaActivities(userId: string): Promise<StravaActivity[]>;
   upsertStravaActivity(userId: string, activity: InsertStravaActivity): Promise<StravaActivity>;
   deleteAllStravaActivities(userId: string): Promise<void>;
+
+  listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]>;
+  upsertPushSubscription(userId: string, endpoint: string, subscription: unknown): Promise<void>;
+  removePushSubscription(userId: string, endpoint?: string): Promise<void>;
+
+  getReminderSettings(userId: string): Promise<ReminderSettings | null>;
+  upsertReminderSettings(
+    userId: string,
+    settings: Pick<ReminderSettings, "timezone" | "longRideEveningBeforeEnabled" | "serviceDueDateEnabled" | "goalOneWeekCountdownEnabled">,
+  ): Promise<ReminderSettings>;
+  listReminderSettingsUsers(): Promise<ReminderSettings[]>;
+
+  createInAppNotification(
+    userId: string,
+    notification: Pick<InAppNotification, "type" | "title" | "body" | "payload">,
+  ): Promise<InAppNotification>;
+  listInAppNotifications(userId: string): Promise<InAppNotification[]>;
+  markInAppNotificationRead(userId: string, id: string): Promise<void>;
+  clearInAppNotifications(userId: string): Promise<void>;
+
+  createNotificationDispatch(userId: string, dedupeKey: string, channel: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -95,6 +123,42 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     if (!hasSettings) {
       await db.update(appSettings).set({ userId }).where(eq(appSettings.userId, LEGACY_USER_ID));
+    }
+
+    const [hasPushSubscriptions] = await db
+      .select({ endpoint: pushSubscriptions.endpoint })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.userId, userId))
+      .limit(1);
+    if (!hasPushSubscriptions) {
+      await db.update(pushSubscriptions).set({ userId }).where(eq(pushSubscriptions.userId, LEGACY_USER_ID));
+    }
+
+    const [hasReminderSettings] = await db
+      .select({ userId: reminderSettings.userId })
+      .from(reminderSettings)
+      .where(eq(reminderSettings.userId, userId))
+      .limit(1);
+    if (!hasReminderSettings) {
+      await db.update(reminderSettings).set({ userId }).where(eq(reminderSettings.userId, LEGACY_USER_ID));
+    }
+
+    const [hasInAppNotifications] = await db
+      .select({ id: inAppNotifications.id })
+      .from(inAppNotifications)
+      .where(eq(inAppNotifications.userId, userId))
+      .limit(1);
+    if (!hasInAppNotifications) {
+      await db.update(inAppNotifications).set({ userId }).where(eq(inAppNotifications.userId, LEGACY_USER_ID));
+    }
+
+    const [hasNotificationDispatches] = await db
+      .select({ dedupeKey: notificationDispatches.dedupeKey })
+      .from(notificationDispatches)
+      .where(eq(notificationDispatches.userId, userId))
+      .limit(1);
+    if (!hasNotificationDispatches) {
+      await db.update(notificationDispatches).set({ userId }).where(eq(notificationDispatches.userId, LEGACY_USER_ID));
     }
 
     this.migratedUsers.add(userId);
@@ -252,6 +316,123 @@ export class DatabaseStorage implements IStorage {
   async deleteAllStravaActivities(userId: string): Promise<void> {
     await this.claimLegacyRowsForUser(userId);
     await db.delete(stravaActivities).where(eq(stravaActivities.userId, userId));
+  }
+
+  async listPushSubscriptions(userId: string): Promise<PushSubscriptionRecord[]> {
+    await this.claimLegacyRowsForUser(userId);
+    return db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  }
+
+  async upsertPushSubscription(userId: string, endpoint: string, subscription: unknown): Promise<void> {
+    await this.claimLegacyRowsForUser(userId);
+    await db
+      .insert(pushSubscriptions)
+      .values({
+        userId,
+        endpoint,
+        subscription,
+        updatedAt: new Date().toISOString(),
+      })
+      .onConflictDoUpdate({
+        target: [pushSubscriptions.userId, pushSubscriptions.endpoint],
+        set: {
+          subscription,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+  }
+
+  async removePushSubscription(userId: string, endpoint?: string): Promise<void> {
+    await this.claimLegacyRowsForUser(userId);
+    if (endpoint) {
+      await db.delete(pushSubscriptions).where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)));
+      return;
+    }
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+  }
+
+  async getReminderSettings(userId: string): Promise<ReminderSettings | null> {
+    await this.claimLegacyRowsForUser(userId);
+    const [settings] = await db.select().from(reminderSettings).where(eq(reminderSettings.userId, userId)).limit(1);
+    return settings ?? null;
+  }
+
+  async upsertReminderSettings(
+    userId: string,
+    settings: Pick<ReminderSettings, "timezone" | "longRideEveningBeforeEnabled" | "serviceDueDateEnabled" | "goalOneWeekCountdownEnabled">,
+  ): Promise<ReminderSettings> {
+    await this.claimLegacyRowsForUser(userId);
+    const [result] = await db
+      .insert(reminderSettings)
+      .values({
+        userId,
+        ...settings,
+        updatedAt: new Date().toISOString(),
+      })
+      .onConflictDoUpdate({
+        target: [reminderSettings.userId],
+        set: {
+          ...settings,
+          updatedAt: new Date().toISOString(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async listReminderSettingsUsers(): Promise<ReminderSettings[]> {
+    return db.select().from(reminderSettings);
+  }
+
+  async createInAppNotification(
+    userId: string,
+    notification: Pick<InAppNotification, "type" | "title" | "body" | "payload">,
+  ): Promise<InAppNotification> {
+    await this.claimLegacyRowsForUser(userId);
+    const [row] = await db
+      .insert(inAppNotifications)
+      .values({
+        userId,
+        ...notification,
+      })
+      .returning();
+    return row;
+  }
+
+  async listInAppNotifications(userId: string): Promise<InAppNotification[]> {
+    await this.claimLegacyRowsForUser(userId);
+    return db
+      .select()
+      .from(inAppNotifications)
+      .where(eq(inAppNotifications.userId, userId))
+      .orderBy(desc(inAppNotifications.createdAt));
+  }
+
+  async markInAppNotificationRead(userId: string, id: string): Promise<void> {
+    await this.claimLegacyRowsForUser(userId);
+    await db
+      .update(inAppNotifications)
+      .set({ readAt: new Date().toISOString() })
+      .where(and(eq(inAppNotifications.userId, userId), eq(inAppNotifications.id, id)));
+  }
+
+  async clearInAppNotifications(userId: string): Promise<void> {
+    await this.claimLegacyRowsForUser(userId);
+    await db.delete(inAppNotifications).where(eq(inAppNotifications.userId, userId));
+  }
+
+  async createNotificationDispatch(userId: string, dedupeKey: string, channel: string): Promise<boolean> {
+    await this.claimLegacyRowsForUser(userId);
+    const inserted = await db
+      .insert(notificationDispatches)
+      .values({
+        userId,
+        dedupeKey,
+        channel,
+      })
+      .onConflictDoNothing()
+      .returning();
+    return inserted.length > 0;
   }
 }
 

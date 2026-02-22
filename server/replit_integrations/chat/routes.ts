@@ -26,6 +26,13 @@ export function registerChatRoutes(app: Express): void {
     return userId;
   };
 
+  const parseConversationId = (rawId: string | string[] | undefined): number | null => {
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) return null;
+    const parsed = parseInt(id, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
   // Get all conversations
   app.get("/api/conversations", async (req: Request, res: Response) => {
     try {
@@ -44,7 +51,10 @@ export function registerChatRoutes(app: Express): void {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const id = parseInt(req.params.id);
+      const id = parseConversationId(req.params.id);
+      if (id == null) {
+        return res.status(400).json({ error: "Invalid conversation id" });
+      }
       const conversation = await chatStorage.getConversation(userId, id);
       if (!conversation) {
         return res.status(404).json({ error: "Conversation not found" });
@@ -76,7 +86,10 @@ export function registerChatRoutes(app: Express): void {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const id = parseInt(req.params.id);
+      const id = parseConversationId(req.params.id);
+      if (id == null) {
+        return res.status(400).json({ error: "Invalid conversation id" });
+      }
       await chatStorage.deleteConversation(userId, id);
       res.status(204).send();
     } catch (error) {
@@ -90,7 +103,10 @@ export function registerChatRoutes(app: Express): void {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseConversationId(req.params.id);
+      if (conversationId == null) {
+        return res.status(400).json({ error: "Invalid conversation id" });
+      }
       const { content } = req.body;
       const conversation = await chatStorage.getConversation(userId, conversationId);
       if (!conversation) {
