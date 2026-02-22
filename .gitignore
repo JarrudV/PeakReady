@@ -7,3 +7,5 @@ vite.config.ts.*
 error*.log
 client_secret_*.json
 *firebase-adminsdk-*.json
+
+.env.local
