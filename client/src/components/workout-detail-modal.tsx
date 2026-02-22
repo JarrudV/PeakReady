@@ -38,7 +38,14 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
                 {session.type}
               </span>
               {session.completed && (
-                <CheckCircle2 size={16} className="text-brand-success" />
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={16} className="text-brand-success" />
+                  {session.completionSource && (
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-brand-success/80">
+                      {session.completionSource}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <h2 className="text-lg font-bold text-brand-text leading-tight">

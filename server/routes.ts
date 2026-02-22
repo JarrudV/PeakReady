@@ -11,6 +11,7 @@ import { isAuthenticated } from "./replit_integrations/auth";
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
   completedAt: z.string().nullable().optional(),
+  completionSource: z.enum(["manual", "strava"]).nullable().optional(),
   rpe: z.number().min(1).max(10).nullable().optional(),
   notes: z.string().nullable().optional(),
   minutes: z.number().positive().optional(),

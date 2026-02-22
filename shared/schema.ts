@@ -15,10 +15,11 @@ export const sessions = pgTable("sessions", {
   elevation: text("elevation"),
   strength: boolean("strength").notNull().default(false),
   completed: boolean("completed").notNull().default(false),
+  completionSource: text("completion_source"),
   rpe: integer("rpe"),
   notes: text("notes"),
   scheduledDate: text("scheduled_date"),
-  completedAt: text("completed_at"),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
   detailsMarkdown: text("details_markdown"),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),
@@ -108,6 +109,7 @@ export const insertGoalEventSchema = createInsertSchema(goalEvents).omit({ userI
 export const insertStravaActivitySchema = createInsertSchema(stravaActivities).omit({ userId: true });
 
 export type Session = typeof sessions.$inferSelect;
+export type SessionCompletionSource = "manual" | "strava" | null;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Metric = typeof metrics.$inferSelect;
 export type InsertMetric = z.infer<typeof insertMetricSchema>;
