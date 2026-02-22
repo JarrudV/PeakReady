@@ -1,0 +1,87 @@
+2026-02-21T20:33:04.157Z	Initializing build environment...
+2026-02-21T20:33:05.943Z	Success: Finished initializing build environment
+2026-02-21T20:33:06.410Z	Cloning repository...
+2026-02-21T20:33:07.632Z	Restoring from dependencies cache
+2026-02-21T20:33:07.634Z	Restoring from build output cache
+2026-02-21T20:33:07.638Z	Detected the following tools from environment: npm@10.9.2, nodejs@22.16.0
+2026-02-21T20:33:07.760Z	Installing project dependencies: npm clean-install --progress=false
+2026-02-21T20:33:18.689Z	
+2026-02-21T20:33:18.689Z	added 556 packages, and audited 557 packages in 10s
+2026-02-21T20:33:18.691Z	
+2026-02-21T20:33:18.691Z	142 packages are looking for funding
+2026-02-21T20:33:18.691Z	  run `npm fund` for details
+2026-02-21T20:33:18.696Z	
+2026-02-21T20:33:18.696Z	5 vulnerabilities (1 low, 1 moderate, 3 high)
+2026-02-21T20:33:18.701Z	
+2026-02-21T20:33:18.701Z	To address all issues, run:
+2026-02-21T20:33:18.701Z	  npm audit fix
+2026-02-21T20:33:18.701Z	
+2026-02-21T20:33:18.701Z	Run `npm audit` for details.
+2026-02-21T20:33:19.001Z	Executing user build command: npm run build
+2026-02-21T20:33:19.245Z	
+2026-02-21T20:33:19.245Z	> rest-express@1.0.0 build
+2026-02-21T20:33:19.245Z	> tsx script/build.ts
+2026-02-21T20:33:19.245Z	
+2026-02-21T20:33:20.176Z	building client...
+2026-02-21T20:33:20.262Z	vite v7.3.0 building client environment for production...
+2026-02-21T20:33:21.144Z	transforming...
+2026-02-21T20:33:22.045Z	
+2026-02-21T20:33:22.045Z	A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+2026-02-21T20:33:27.829Z	✓ 2735 modules transformed.
+2026-02-21T20:33:28.641Z	rendering chunks...
+2026-02-21T20:33:28.659Z	computing gzip size...
+2026-02-21T20:33:28.696Z	../dist/public/index.html                   2.01 kB │ gzip:   0.77 kB
+2026-02-21T20:33:28.696Z	../dist/public/assets/index-ByqkhNg9.css   81.94 kB │ gzip:  12.87 kB
+2026-02-21T20:33:28.697Z	../dist/public/assets/index-KMX4TpZI.js   853.69 kB │ gzip: 249.88 kB
+2026-02-21T20:33:28.697Z	✓ built in 8.03s
+2026-02-21T20:33:28.697Z	building server...
+2026-02-21T20:33:28.697Z	
+2026-02-21T20:33:28.698Z	(!) Some chunks are larger than 500 kB after minification. Consider:
+2026-02-21T20:33:28.698Z	- Using dynamic import() to code-split the application
+2026-02-21T20:33:28.698Z	- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+2026-02-21T20:33:28.698Z	- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+2026-02-21T20:33:28.937Z	
+2026-02-21T20:33:28.938Z	  dist/index.cjs  1.0mb ⚠️
+2026-02-21T20:33:28.938Z	
+2026-02-21T20:33:28.938Z	⚡ Done in 223ms
+2026-02-21T20:33:29.083Z	Success: Build command completed
+2026-02-21T20:33:29.323Z	Executing user deploy command: npx wrangler versions upload
+2026-02-21T20:33:30.773Z	npm warn exec The following package was not found and will be installed: wrangler@4.67.0
+2026-02-21T20:33:39.315Z	
+2026-02-21T20:33:39.315Z	 ⛅️ wrangler 4.67.0
+2026-02-21T20:33:39.317Z	───────────────────
+2026-02-21T20:33:39.348Z	
+2026-02-21T20:33:39.405Z	✘ [ERROR] Missing entry-point to Worker script or to assets directory
+2026-02-21T20:33:39.406Z	
+2026-02-21T20:33:39.406Z	  
+2026-02-21T20:33:39.406Z	  If there is code to deploy, you can either:
+2026-02-21T20:33:39.406Z	  - Specify an entry-point to your Worker script via the command line (ex: `npx wrangler versions upload src/index.ts`)
+2026-02-21T20:33:39.406Z	  - Or create a "wrangler.jsonc" file containing:
+2026-02-21T20:33:39.407Z	  
+2026-02-21T20:33:39.407Z	  ```
+2026-02-21T20:33:39.407Z	  {
+2026-02-21T20:33:39.407Z	    "name": "worker-name",
+2026-02-21T20:33:39.407Z	    "compatibility_date": "2026-02-21",
+2026-02-21T20:33:39.408Z	    "main": "src/index.ts"
+2026-02-21T20:33:39.408Z	  }
+2026-02-21T20:33:39.409Z	  ```
+2026-02-21T20:33:39.409Z	  
+2026-02-21T20:33:39.409Z	  
+2026-02-21T20:33:39.411Z	  If are uploading a directory of assets, you can either:
+2026-02-21T20:33:39.411Z	  - Specify the path to the directory of assets via the command line: (ex: `npx wrangler versions upload --assets=./dist`)
+2026-02-21T20:33:39.411Z	  - Or create a "wrangler.jsonc" file containing:
+2026-02-21T20:33:39.411Z	  
+2026-02-21T20:33:39.411Z	  ```
+2026-02-21T20:33:39.411Z	  {
+2026-02-21T20:33:39.411Z	    "name": "worker-name",
+2026-02-21T20:33:39.411Z	    "compatibility_date": "2026-02-21",
+2026-02-21T20:33:39.411Z	    "assets": {
+2026-02-21T20:33:39.412Z	      "directory": "./dist"
+2026-02-21T20:33:39.412Z	    }
+2026-02-21T20:33:39.412Z	  }
+2026-02-21T20:33:39.412Z	  ```
+2026-02-21T20:33:39.412Z	  
+2026-02-21T20:33:39.412Z	
+2026-02-21T20:33:39.412Z	
+2026-02-21T20:33:39.462Z	🪵  Logs were written to "/opt/buildhome/.config/.wrangler/logs/wrangler-2026-02-21_20-33-38_522.log"
+2026-02-21T20:33:39.593Z	Failed: error occurred while running deploy command

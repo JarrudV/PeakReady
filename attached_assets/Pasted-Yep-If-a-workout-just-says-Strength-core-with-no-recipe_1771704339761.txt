@@ -1,0 +1,157 @@
+Yep. If a workout just says “Strength + core” with no recipe, it’s basically a fortune cookie.
+
+Here’s the fix: every session becomes clickable and opens a Workout Detail view with a clear “do this” plan.
+
+What to add (simple + effective)
+
+1) Add these fields to each session
+
+You already have description, but we need structured detail:
+	•	goal (1 line)
+	•	warmup (bullets)
+	•	mainSet (bullets)
+	•	cooldown (bullets)
+	•	equipment (bullets)
+	•	timeCap (minutes)
+	•	notes (optional)
+
+If you don’t want to change your data model, you can store this as one string field:
+detailsMarkdown
+
+That’s the fastest.
+
+⸻
+
+Copy and paste workout definitions (use these now)
+
+Strength + Core A (40 mins)
+
+Goal: Build durability for climbing and protect knees and lower back.
+
+Warm up (5 mins)
+	•	Bodyweight squats x 10
+	•	Glute bridges x 12
+	•	Dead bugs x 10 per side
+	•	Hip hinge drill x 10
+
+Main set (30 mins)
+Do 3 rounds, rest 60 seconds between movements:
+	•	Goblet squat (or bodyweight) x 10
+	•	Reverse lunge x 8 per leg
+	•	Romanian deadlift with backpack or dumbbells x 10
+	•	Calf raises x 15
+	•	Plank 45 seconds
+	•	Side plank 30 seconds per side
+
+Cool down (5 mins)
+	•	Hip flexor stretch 60 seconds per side
+	•	Hamstring stretch 60 seconds
+	•	Thoracic rotation 10 per side
+
+Equipment
+	•	Dumbbell or kettlebell or a loaded backpack
+	•	Mat
+
+⸻
+
+Strength + Core B (45 mins)
+
+Goal: Improve climbing power and stability.
+
+Warm up (5 mins)
+	•	Step ups x 10 per leg
+	•	Air squats x 10
+	•	Shoulder openers x 10
+
+Main set (35 mins)
+4 rounds:
+	•	Step ups (chair/box) x 10 per leg
+	•	Split squat x 8 per leg
+	•	Single leg RDL (light) x 8 per leg
+	•	Push ups x 10
+	•	Hollow hold 25 seconds
+Rest 60–90 seconds between rounds.
+
+Cool down
+	•	Quad stretch 60 seconds per leg
+	•	Glute stretch 60 seconds per side
+
+⸻
+
+Easy Z2 Ride (60 mins)
+
+Goal: Build aerobic base and comfort on the bike.
+
+Warm up (10 mins)
+Easy spin, light gears.
+
+Main set (40 mins)
+	•	Stay Z2
+	•	Cadence 85–95
+	•	Breathe through nose if possible
+	•	Keep effort conversational
+
+Cool down (10 mins)
+Easy spin, high cadence.
+
+⸻
+
+Endurance Ride + Climbs (70–80 mins)
+
+Goal: Get used to sustained climbing without going full send.
+
+Warm up (15 mins)
+Z1–Z2 ramp.
+
+Main set
+	•	4 x 3 min steady climb at Z3 feel (not max)
+	•	Recover 3 min easy between
+Then ride Z2 steady until time.
+
+Cool down
+10 mins easy.
+
+⸻
+
+Long Ride (90–240 mins depending on week)
+
+Goal: Race durability. Fueling practice. Pacing discipline.
+
+Rules
+	•	Mostly Z2
+	•	Every 30 mins: drink
+	•	Every 45 mins: eat something
+	•	If you feel amazing, you still don’t smash it
+
+Optional blocks (from Week 5+)
+	•	2 x 15 min tempo (Z3) with 10 min easy between
+
+⸻
+
+How to implement in the app (fast)
+
+UI
+
+On Training Plan list:
+	•	Make each row tappable
+	•	Open a modal or route: /session/:id
+
+Data
+
+Add a lookup map:
+workoutLibrary[type] or workoutLibrary[sessionKey]
+
+Example:
+	•	Strength sessions use Strength A or B alternating
+	•	Rides use templates based on description keywords
+
+⸻
+
+If you want the quickest possible version
+
+Tell Gemini to:
+	1.	Add a details button on each session row
+	2.	Open a modal showing detailsMarkdown
+	3.	Preseed detailsMarkdown for all sessions using templates above
+
+If you want, paste one week of your current session JSON (or a screenshot of week 1) and I’ll convert the entire 12 week plan into clean “click to view” workout cards with proper detail.
