@@ -1,13 +1,30 @@
 import { GoogleGenAI } from "@google/genai";
 import type { InsertSession } from "@shared/schema";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
+let aiClient: GoogleGenAI | null = null;
+
+function getAiClient(): GoogleGenAI {
+  if (aiClient) {
+    return aiClient;
+  }
+
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+
+  if (!apiKey || !baseUrl) {
+    throw new Error("AI plan generation is not configured. Set AI_INTEGRATIONS_GEMINI_API_KEY and AI_INTEGRATIONS_GEMINI_BASE_URL.");
+  }
+
+  aiClient = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      apiVersion: "",
+      baseUrl,
+    },
+  });
+
+  return aiClient;
+}
 
 export interface PlanRequest {
   eventName: string;
@@ -77,6 +94,7 @@ Return ONLY a JSON array, no other text.`;
 }
 
 export async function generateAIPlan(req: PlanRequest): Promise<InsertSession[]> {
+  const ai = getAiClient();
   const prompt = buildPrompt(req);
 
   const response = await ai.models.generateContent({

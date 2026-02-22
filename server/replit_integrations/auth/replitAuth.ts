@@ -8,6 +8,29 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
 
+const AUTH_BYPASS_ENABLED =
+  process.env.AUTH_BYPASS === "true" ||
+  (!process.env.REPL_ID && process.env.NODE_ENV !== "production");
+
+let hasWarnedAuthBypass = false;
+const warnAuthBypass = () => {
+  if (hasWarnedAuthBypass) return;
+  hasWarnedAuthBypass = true;
+  console.warn(
+    "[auth] AUTH_BYPASS is enabled. Requests are authenticated as a single mock user."
+  );
+};
+
+function getBypassClaims() {
+  return {
+    sub: process.env.AUTH_BYPASS_USER_ID ?? "dev-user",
+    email: process.env.AUTH_BYPASS_EMAIL ?? "dev@example.com",
+    first_name: process.env.AUTH_BYPASS_FIRST_NAME ?? "Dev",
+    last_name: process.env.AUTH_BYPASS_LAST_NAME ?? "User",
+    profile_image_url: process.env.AUTH_BYPASS_PROFILE_IMAGE_URL,
+  };
+}
+
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
@@ -19,6 +42,10 @@ const getOidcConfig = memoize(
 );
 
 export function getSession() {
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be set when Replit auth is enabled");
+  }
+
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
@@ -28,7 +55,7 @@ export function getSession() {
     tableName: "auth_sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
@@ -62,6 +89,19 @@ async function upsertUser(claims: any) {
 
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
+
+  if (AUTH_BYPASS_ENABLED) {
+    warnAuthBypass();
+    app.get("/api/login", (_req, res) => res.redirect("/"));
+    app.get("/api/callback", (_req, res) => res.redirect("/"));
+    app.get("/api/logout", (_req, res) => res.redirect("/"));
+    return;
+  }
+
+  if (!process.env.REPL_ID) {
+    throw new Error("REPL_ID must be set unless AUTH_BYPASS=true");
+  }
+
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
@@ -131,6 +171,17 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  if (AUTH_BYPASS_ENABLED) {
+    warnAuthBypass();
+    const claims = getBypassClaims();
+    await upsertUser(claims);
+    (req as any).user = {
+      claims,
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
+    };
+    return next();
+  }
+
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
