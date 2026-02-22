@@ -146,7 +146,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
       expires_at: decoded.exp,
     };
     return next();
-  } catch {
+  } catch (err: any) {
+    console.error("[auth] Token verification or DB upsert failed:", err);
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
