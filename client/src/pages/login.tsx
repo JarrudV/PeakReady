@@ -118,7 +118,7 @@ export function LoginPage() {
             </div>
           </div>
 
-          <form className="space-y-3" onSubmit={handleEmailAuth}>
+          <form className="space-y-3" onSubmit={handleEmailAuth} autoComplete="on">
             {isSignUp && (
               <div className="space-y-1.5">
                 <Label htmlFor="username">Username</Label>
@@ -126,10 +126,12 @@ export function LoginPage() {
                   <UserIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
                   <Input
                     id="username"
+                    name="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="pl-9"
                     placeholder="Your name"
+                    autoComplete="username"
                     data-testid="input-username"
                   />
                 </div>
@@ -142,12 +144,14 @@ export function LoginPage() {
                 <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9"
                   placeholder="you@example.com"
                   required
+                  autoComplete="email"
                   data-testid="input-email"
                 />
               </div>
@@ -159,6 +163,7 @@ export function LoginPage() {
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-muted" />
                 <Input
                   id="password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -166,6 +171,7 @@ export function LoginPage() {
                   placeholder="********"
                   required
                   minLength={6}
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
                   data-testid="input-password"
                 />
               </div>
