@@ -22,7 +22,40 @@ function runCommand(command, args, env = process.env) {
   });
 }
 
+function isAuthBypassEnabled() {
+  return process.env.AUTH_BYPASS === "true";
+}
+
+function validateRuntimeEnv() {
+  const missing = [];
+
+  if (!process.env.DATABASE_URL) {
+    missing.push("DATABASE_URL");
+  }
+
+  if (!isAuthBypassEnabled()) {
+    if (!process.env.REPL_ID) {
+      missing.push("REPL_ID (or set AUTH_BYPASS=true)");
+    }
+    if (!process.env.SESSION_SECRET) {
+      missing.push("SESSION_SECRET (or set AUTH_BYPASS=true)");
+    }
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.error("[deploy] Missing required environment variables:");
+  for (const key of missing) {
+    console.error(`[deploy] - ${key}`);
+  }
+  process.exit(1);
+}
+
 async function main() {
+  validateRuntimeEnv();
+
   const runMigrations = process.env.RUN_DB_PUSH_ON_START === "true";
 
   if (runMigrations) {
