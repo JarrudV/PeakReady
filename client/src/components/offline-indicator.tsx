@@ -16,7 +16,7 @@ export function OfflineIndicator() {
     >
       {isOnline ? <Wifi size={12} className="text-brand-success" /> : <WifiOff size={12} className="text-brand-warning" />}
       <span>{isOnline ? "Online" : "Offline"}</span>
-      <span className="text-brand-muted/70">·</span>
+      <span className="text-brand-muted/70">|</span>
       <span>{syncText}</span>
     </div>
   );
