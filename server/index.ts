@@ -1,3 +1,9 @@
+import crypto from "crypto";
+if (typeof globalThis.crypto === "undefined") {
+  // @ts-ignore
+  globalThis.crypto = crypto.webcrypto;
+}
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
