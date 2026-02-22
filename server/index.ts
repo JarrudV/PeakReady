@@ -30,6 +30,12 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Allow OAuth popup flows (e.g. Firebase Google sign-in) to close reliably.
+app.use((_req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

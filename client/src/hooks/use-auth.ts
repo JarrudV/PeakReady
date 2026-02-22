@@ -6,16 +6,26 @@ import { clearOfflineSyncStorage } from "@/hooks/use-offline-sync";
 import { firebaseAuth } from "@/lib/firebase";
 
 async function fetchUser(): Promise<User | null> {
-  const token = await firebaseAuth.currentUser?.getIdToken();
-  if (!token) {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
     return null;
   }
 
-  const response = await fetch("/api/auth/user", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const requestUser = async (token: string) =>
+    fetch("/api/auth/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+  let token = await user.getIdToken();
+  let response = await requestUser(token);
+
+  if (response.status === 401) {
+    // Token may have expired locally; retry once with a forced refresh.
+    token = await user.getIdToken(true);
+    response = await requestUser(token);
+  }
 
   if (response.status === 401) {
     return null;
