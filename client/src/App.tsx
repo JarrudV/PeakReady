@@ -10,6 +10,7 @@ import {
   Wrench,
   MountainSnow,
   User,
+  Settings,
 } from "lucide-react";
 import { Dashboard } from "@/pages/dashboard";
 import { TrainingPlan } from "@/pages/training-plan";
@@ -21,6 +22,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Session, Metric, ServiceItem, GoalEvent } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { OfflineIndicator } from "@/components/offline-indicator";
+import { NotificationsCenter } from "@/components/notifications-center";
+import { SettingsModal } from "@/components/settings-modal";
+import {
+  applyTheme,
+  isThemeAccent,
+  isThemeMode,
+  persistThemeLocally,
+  readStoredTheme,
+  type ThemeAccent,
+  type ThemeMode,
+} from "@/lib/theme";
 
 type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
 
@@ -28,9 +41,20 @@ function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [activeWeek, setActiveWeek] = useState(1);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readStoredTheme().mode);
+  const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readStoredTheme().accent);
 
   const { data: savedWeek } = useQuery<{ value: string | null }>({
     queryKey: ["/api/settings", "activeWeek"],
+    enabled: isAuthenticated,
+  });
+  const { data: savedThemeMode } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "themeMode"],
+    enabled: isAuthenticated,
+  });
+  const { data: savedThemeAccent } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "themeAccent"],
     enabled: isAuthenticated,
   });
 
@@ -40,6 +64,23 @@ function MainApp() {
       if (parsed >= 1 && parsed <= 12) setActiveWeek(parsed);
     }
   }, [savedWeek]);
+
+  useEffect(() => {
+    if (isThemeMode(savedThemeMode?.value)) {
+      setThemeMode(savedThemeMode.value);
+    }
+  }, [savedThemeMode?.value]);
+
+  useEffect(() => {
+    if (isThemeAccent(savedThemeAccent?.value)) {
+      setThemeAccent(savedThemeAccent.value);
+    }
+  }, [savedThemeAccent?.value]);
+
+  useEffect(() => {
+    applyTheme(themeMode, themeAccent);
+    persistThemeLocally(themeMode, themeAccent);
+  }, [themeMode, themeAccent]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery<Session[]>({
     queryKey: ["/api/sessions"],
@@ -65,6 +106,20 @@ function MainApp() {
     setActiveWeek(week);
     try {
       await apiRequest("PUT", "/api/settings/activeWeek", { value: week.toString() });
+    } catch {}
+  };
+
+  const handleThemeModeChange = async (mode: ThemeMode) => {
+    setThemeMode(mode);
+    try {
+      await apiRequest("PUT", "/api/settings/themeMode", { value: mode });
+    } catch {}
+  };
+
+  const handleThemeAccentChange = async (accent: ThemeAccent) => {
+    setThemeAccent(accent);
+    try {
+      await apiRequest("PUT", "/api/settings/themeAccent", { value: accent });
     } catch {}
   };
 
@@ -115,7 +170,7 @@ function MainApp() {
   return (
     <div className="min-h-screen text-brand-text font-sans pb-24">
       <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-between">
-        <div className="w-9" />
+        <OfflineIndicator />
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
             <MountainSnow size={18} className="text-brand-bg" />
@@ -124,23 +179,34 @@ function MainApp() {
             Peak<span className="text-gradient-primary">Ready</span>
           </h1>
         </div>
-        <button
-          onClick={() => logout()}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden"
-          title="Sign out"
-          data-testid="button-logout"
-        >
-          {user?.profileImageUrl ? (
-            <img
-              src={user.profileImageUrl}
-              alt=""
-              className="w-9 h-9 rounded-full object-cover"
-              data-testid="img-user-avatar"
-            />
-          ) : (
-            <User size={18} />
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationsCenter />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors bg-brand-panel-2 border border-brand-border"
+            title="Settings"
+            data-testid="button-open-settings"
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={() => logout()}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden"
+            title="Sign out"
+            data-testid="button-logout"
+          >
+            {user?.profileImageUrl ? (
+              <img
+                src={user.profileImageUrl}
+                alt=""
+                className="w-9 h-9 rounded-full object-cover"
+                data-testid="img-user-avatar"
+              />
+            ) : (
+              <User size={18} />
+            )}
+          </button>
+        </div>
       </header>
 
       <main className="max-w-lg mx-auto w-full pb-4 pt-4 relative">
@@ -156,7 +222,7 @@ function MainApp() {
         {activeTab === "plan" && (
           <TrainingPlan sessions={sessions} activeWeek={activeWeek} goal={goal || undefined} />
         )}
-        {activeTab === "metrics" && <Metrics metrics={metrics} />}
+        {activeTab === "metrics" && <Metrics metrics={metrics} sessions={sessions} />}
         {activeTab === "service" && (
           <ServiceTracker serviceItems={serviceItems} />
         )}
@@ -203,6 +269,15 @@ function MainApp() {
           testId="nav-service"
         />
       </nav>
+
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        mode={themeMode}
+        accent={themeAccent}
+        onModeChange={handleThemeModeChange}
+        onAccentChange={handleThemeAccentChange}
+      />
     </div>
   );
 }

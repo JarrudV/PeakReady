@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Metric } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import type { Metric, Session, StravaActivity } from "@shared/schema";
 import {
   LineChart,
   Line,
@@ -17,11 +18,15 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   metrics: Metric[];
+  sessions: Session[];
 }
 
-export function Metrics({ metrics }: Props) {
+export function Metrics({ metrics, sessions }: Props) {
   const [isAdding, setIsAdding] = useState(false);
   const { toast } = useToast();
+  const { data: stravaActivities = [] } = useQuery<StravaActivity[]>({
+    queryKey: ["/api/strava/activities"],
+  });
 
   const sortedMetrics = [...metrics].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -34,6 +39,8 @@ export function Metrics({ metrics }: Props) {
       ...m,
       dateFormatted: format(parseISO(m.date), "MMM d"),
     }));
+
+  const plannedVsActualData = buildPlannedVsActualSeries(sessions, stravaActivities);
 
   const handleAddEntry = async (entry: {
     date: string;
@@ -137,6 +144,73 @@ export function Metrics({ metrics }: Props) {
       )}
 
       {!isAdding && (
+        <div className="glass-panel p-4 border-brand-border/50 shadow-[0_0_20px_rgba(255,168,0,0.05)] relative overflow-hidden">
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-secondary opacity-10 blur-3xl -ml-10 -mb-10 rounded-full pointer-events-none" />
+          <h3 className="text-brand-muted text-[10px] uppercase font-bold tracking-widest mb-4">
+            Planned vs Actual (Last 14 Days)
+          </h3>
+          <div className="h-56 w-full relative z-10">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={plannedVsActualData}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="rgba(255,255,255,0.05)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="dateFormatted"
+                  stroke="rgba(255,255,255,0.4)"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  dy={10}
+                />
+                <YAxis
+                  stroke="rgba(255,255,255,0.4)"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  dx={-10}
+                  width={35}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "rgba(15,12,41,0.95)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: "8px",
+                    color: "#fff",
+                  }}
+                  formatter={(value: number, name: string) => [
+                    `${Number(value || 0).toFixed(0)} min`,
+                    name,
+                  ]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="plannedMinutes"
+                  name="Planned"
+                  stroke="#41D1FF"
+                  strokeWidth={2.5}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="actualMinutes"
+                  name="Actual (Strava)"
+                  stroke="#FFA800"
+                  strokeWidth={2.5}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mt-3">
+            Missing Strava data is shown as 0 minutes.
+          </p>
+        </div>
+      )}
+
+      {!isAdding && (
         <div className="space-y-3">
           <h3 className="text-lg font-bold text-brand-text">History</h3>
           {sortedMetrics.length === 0 ? (
@@ -198,6 +272,43 @@ export function Metrics({ metrics }: Props) {
       )}
     </div>
   );
+}
+
+function buildPlannedVsActualSeries(sessions: Session[], activities: StravaActivity[]) {
+  const days: Array<{ key: string; dateFormatted: string; plannedMinutes: number; actualMinutes: number }> = [];
+  const now = new Date();
+
+  for (let i = 13; i >= 0; i--) {
+    const day = new Date(now);
+    day.setDate(now.getDate() - i);
+    const key = day.toISOString().slice(0, 10);
+    days.push({
+      key,
+      dateFormatted: format(day, "MMM d"),
+      plannedMinutes: 0,
+      actualMinutes: 0,
+    });
+  }
+
+  const indexByDate = new Map(days.map((d, idx) => [d.key, idx]));
+
+  for (const session of sessions) {
+    if (!session.scheduledDate) continue;
+    const idx = indexByDate.get(session.scheduledDate);
+    if (idx === undefined) continue;
+    if (session.type !== "Ride" && session.type !== "Long Ride") continue;
+    days[idx].plannedMinutes += session.minutes || 0;
+  }
+
+  for (const activity of activities) {
+    const key = activity.startDate.slice(0, 10);
+    const idx = indexByDate.get(key);
+    if (idx === undefined) continue;
+    const seconds = activity.movingTime || activity.elapsedTime || 0;
+    days[idx].actualMinutes += Math.round(seconds / 60);
+  }
+
+  return days;
 }
 
 function AddMetricForm({

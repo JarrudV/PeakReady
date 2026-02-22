@@ -1,8 +1,9 @@
 import { storage } from "./storage";
-import type { InsertStravaActivity } from "@shared/schema";
+import type { InsertStravaActivity, Session } from "@shared/schema";
 
 const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+const AUTO_COMPLETE_TOLERANCE = 0.2;
 
 const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
 
@@ -107,7 +108,10 @@ function mapActivity(a: StravaApiActivity): InsertStravaActivity {
   };
 }
 
-export async function syncStravaActivities(userId: string, refreshToken: string): Promise<{ synced: number; total: number }> {
+export async function syncStravaActivities(
+  userId: string,
+  refreshToken: string,
+): Promise<{ synced: number; total: number; autoCompleted: number }> {
   let allActivities: StravaApiActivity[] = [];
   let page = 1;
   const perPage = 100;
@@ -130,7 +134,9 @@ export async function syncStravaActivities(userId: string, refreshToken: string)
     synced++;
   }
 
-  return { synced, total: allActivities.length };
+  const autoCompleted = await autoCompleteSessionsFromActivities(userId, rides);
+
+  return { synced, total: allActivities.length, autoCompleted };
 }
 
 export function isStravaConfigured(): boolean {
@@ -138,6 +144,100 @@ export function isStravaConfigured(): boolean {
     process.env.STRAVA_CLIENT_ID &&
     process.env.STRAVA_CLIENT_SECRET
   );
+}
+
+function toDateOnly(isoString: string): string {
+  return isoString.slice(0, 10);
+}
+
+function getActivityDurationSeconds(activity: StravaApiActivity): number {
+  return activity.moving_time || activity.elapsed_time || 0;
+}
+
+async function autoCompleteSessionsFromActivities(userId: string, activities: StravaApiActivity[]): Promise<number> {
+  const sessions = await storage.getSessions(userId);
+
+  const candidateSessions = sessions.filter(
+    (session) =>
+      !session.completed &&
+      !!session.scheduledDate &&
+      (session.type === "Ride" || session.type === "Long Ride") &&
+      session.minutes > 0,
+  );
+
+  if (candidateSessions.length === 0 || activities.length === 0) {
+    return 0;
+  }
+
+  const pairs: Array<{
+    session: Session;
+    activity: StravaApiActivity;
+    ratioDelta: number;
+  }> = [];
+
+  for (const session of candidateSessions) {
+    const plannedSeconds = session.minutes * 60;
+    for (const activity of activities) {
+      if (toDateOnly(activity.start_date) !== session.scheduledDate) {
+        continue;
+      }
+
+      const activitySeconds = getActivityDurationSeconds(activity);
+      if (!activitySeconds) {
+        continue;
+      }
+
+      const ratioDelta = Math.abs(activitySeconds - plannedSeconds) / plannedSeconds;
+      if (ratioDelta <= AUTO_COMPLETE_TOLERANCE) {
+        pairs.push({
+          session,
+          activity,
+          ratioDelta,
+        });
+      }
+    }
+  }
+
+  if (pairs.length === 0) {
+    return 0;
+  }
+
+  // Deterministic matching: best duration fit first, then stable tie-breakers.
+  pairs.sort((a, b) => {
+    if (a.ratioDelta !== b.ratioDelta) {
+      return a.ratioDelta - b.ratioDelta;
+    }
+    if (a.activity.start_date !== b.activity.start_date) {
+      return a.activity.start_date.localeCompare(b.activity.start_date);
+    }
+    if (a.session.id !== b.session.id) {
+      return a.session.id.localeCompare(b.session.id);
+    }
+    return String(a.activity.id).localeCompare(String(b.activity.id));
+  });
+
+  const usedSessionIds = new Set<string>();
+  const usedActivityIds = new Set<number>();
+  const selected = pairs.filter((pair) => {
+    if (usedSessionIds.has(pair.session.id) || usedActivityIds.has(pair.activity.id)) {
+      return false;
+    }
+    usedSessionIds.add(pair.session.id);
+    usedActivityIds.add(pair.activity.id);
+    return true;
+  });
+
+  await Promise.all(
+    selected.map((pair) =>
+      storage.updateSession(userId, pair.session.id, {
+        completed: true,
+        completedAt: pair.activity.start_date,
+        completionSource: "strava",
+      }),
+    ),
+  );
+
+  return selected.length;
 }
 
 export function getStravaAuthUrl(redirectUri: string): string {

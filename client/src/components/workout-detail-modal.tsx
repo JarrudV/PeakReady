@@ -1,14 +1,80 @@
-import { X, Clock, Mountain, ArrowRight, CheckCircle2 } from "lucide-react";
-import type { Session } from "@shared/schema";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { X, Clock, Mountain, ArrowRight, CheckCircle2, Share2 } from "lucide-react";
+import type { Session, StravaActivity } from "@shared/schema";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+import { generateWorkoutShareCard } from "@/lib/share-card";
+import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   session: Session;
   onClose: () => void;
 }
 
+function getBestMatchingActivity(session: Session, activities: StravaActivity[]) {
+  if (!session.scheduledDate) return null;
+
+  const sameDay = activities.filter((activity) => activity.startDate.slice(0, 10) === session.scheduledDate);
+  if (sameDay.length === 0) return null;
+
+  const targetSeconds = session.minutes * 60;
+  return sameDay
+    .slice()
+    .sort((a, b) => {
+      const aSeconds = a.movingTime || a.elapsedTime || 0;
+      const bSeconds = b.movingTime || b.elapsedTime || 0;
+      return Math.abs(aSeconds - targetSeconds) - Math.abs(bSeconds - targetSeconds);
+    })[0];
+}
+
 export function WorkoutDetailModal({ session, onClose }: Props) {
+  const { toast } = useToast();
+  const [isSharing, setIsSharing] = useState(false);
+  const { data: stravaActivities = [] } = useQuery<StravaActivity[]>({
+    queryKey: ["/api/strava/activities"],
+    enabled: session.completed,
+  });
+
+  const matchedActivity = getBestMatchingActivity(session, stravaActivities);
+
+  const handleShare = async () => {
+    try {
+      setIsSharing(true);
+      const blob = await generateWorkoutShareCard({
+        session,
+        stravaActivity: matchedActivity,
+      });
+
+      const fileName = `peakready-${session.id}.png`;
+      const pngFile = new File([blob], fileName, { type: "image/png" });
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+      };
+
+      if (nav.share && nav.canShare?.({ files: [pngFile] })) {
+        await nav.share({
+          title: "PeakReady Workout",
+          text: `${session.description} completed`,
+          files: [pngFile],
+        });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Workout card downloaded" });
+    } catch {
+      toast({ title: "Failed to share workout card", variant: "destructive" });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
@@ -38,20 +104,42 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
                 {session.type}
               </span>
               {session.completed && (
-                <CheckCircle2 size={16} className="text-brand-success" />
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={16} className="text-brand-success" />
+                  {session.completionSource && (
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-brand-success/80">
+                      {session.completionSource}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <h2 className="text-lg font-bold text-brand-text leading-tight">
               {session.description}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full bg-brand-panel-2 text-brand-text hover:bg-brand-panel transition-colors flex-shrink-0"
-            data-testid="button-close-detail"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {session.completed && (
+              <button
+                onClick={handleShare}
+                disabled={isSharing}
+                className="px-3 py-2 rounded-full bg-gradient-primary text-brand-bg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-colors"
+                data-testid="button-share-workout"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Share2 size={14} />
+                  {isSharing ? "Preparing..." : "Share"}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-brand-panel-2 text-brand-text hover:bg-brand-panel transition-colors"
+              data-testid="button-close-detail"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-3 px-4 py-3 border-b border-brand-border bg-brand-bg/50">
@@ -72,7 +160,7 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
             </span>
           )}
           <span className="flex items-center text-[10px] uppercase font-bold tracking-widest text-brand-muted ml-auto">
-            Week {session.week} · {session.day}
+            Week {session.week} | {session.day}
           </span>
         </div>
 
@@ -109,7 +197,7 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
                 ),
                 li: ({ children }) => (
                   <li className="text-sm text-brand-muted flex items-start gap-2">
-                    <span className="text-brand-primary mt-1.5 text-[6px]">●</span>
+                    <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
                     <span className="flex-1">{children}</span>
                   </li>
                 ),

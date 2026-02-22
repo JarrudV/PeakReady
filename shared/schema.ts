@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, boolean, date, timestamp, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, index, primaryKey, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -15,10 +15,11 @@ export const sessions = pgTable("sessions", {
   elevation: text("elevation"),
   strength: boolean("strength").notNull().default(false),
   completed: boolean("completed").notNull().default(false),
+  completionSource: text("completion_source"),
   rpe: integer("rpe"),
   notes: text("notes"),
   scheduledDate: text("scheduled_date"),
-  completedAt: text("completed_at"),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
   detailsMarkdown: text("details_markdown"),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),
@@ -41,6 +42,7 @@ export const serviceItems = pgTable("service_items", {
   userId: text("user_id").notNull().default("__legacy__"),
   id: varchar("id", { length: 64 }).notNull(),
   date: text("date"),
+  dueDate: text("due_date"),
   item: text("item").notNull(),
   shop: text("shop"),
   cost: real("cost"),
@@ -101,13 +103,64 @@ export const appSettings = pgTable("app_settings", {
   index("app_settings_user_id_idx").on(table.userId),
 ]);
 
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  userId: text("user_id").notNull().default("__legacy__"),
+  endpoint: text("endpoint").notNull(),
+  subscription: jsonb("subscription").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.endpoint] }),
+  index("push_subscriptions_user_id_idx").on(table.userId),
+]);
+
+export const reminderSettings = pgTable("reminder_settings", {
+  userId: text("user_id").notNull().default("__legacy__"),
+  timezone: text("timezone").notNull().default("UTC"),
+  longRideEveningBeforeEnabled: boolean("long_ride_evening_before_enabled").notNull().default(false),
+  serviceDueDateEnabled: boolean("service_due_date_enabled").notNull().default(false),
+  goalOneWeekCountdownEnabled: boolean("goal_one_week_countdown_enabled").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId] }),
+  index("reminder_settings_user_id_idx").on(table.userId),
+]);
+
+export const inAppNotifications = pgTable("in_app_notifications", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  payload: jsonb("payload"),
+  readAt: timestamp("read_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("in_app_notifications_user_id_idx").on(table.userId),
+]);
+
+export const notificationDispatches = pgTable("notification_dispatches", {
+  userId: text("user_id").notNull().default("__legacy__"),
+  dedupeKey: text("dedupe_key").notNull(),
+  channel: text("channel").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.dedupeKey] }),
+  index("notification_dispatches_user_id_idx").on(table.userId),
+]);
+
 export const insertSessionSchema = createInsertSchema(sessions).omit({ userId: true });
 export const insertMetricSchema = createInsertSchema(metrics).omit({ id: true, userId: true });
 export const insertServiceItemSchema = createInsertSchema(serviceItems).omit({ userId: true });
 export const insertGoalEventSchema = createInsertSchema(goalEvents).omit({ userId: true });
 export const insertStravaActivitySchema = createInsertSchema(stravaActivities).omit({ userId: true });
+export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions).omit({ userId: true, createdAt: true, updatedAt: true });
+export const insertReminderSettingsSchema = createInsertSchema(reminderSettings).omit({ userId: true, createdAt: true, updatedAt: true });
+export const insertInAppNotificationSchema = createInsertSchema(inAppNotifications).omit({ id: true, userId: true, createdAt: true, readAt: true });
 
 export type Session = typeof sessions.$inferSelect;
+export type SessionCompletionSource = "manual" | "strava" | null;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Metric = typeof metrics.$inferSelect;
 export type InsertMetric = z.infer<typeof insertMetricSchema>;
@@ -117,6 +170,10 @@ export type GoalEvent = typeof goalEvents.$inferSelect;
 export type InsertGoalEvent = z.infer<typeof insertGoalEventSchema>;
 export type StravaActivity = typeof stravaActivities.$inferSelect;
 export type InsertStravaActivity = z.infer<typeof insertStravaActivitySchema>;
+export type PushSubscriptionRecord = typeof pushSubscriptions.$inferSelect;
+export type ReminderSettings = typeof reminderSettings.$inferSelect;
+export type InAppNotification = typeof inAppNotifications.$inferSelect;
+export type NotificationDispatch = typeof notificationDispatches.$inferSelect;
 
 export * from "./models/chat";
 export * from "./models/auth";

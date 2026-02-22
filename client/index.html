@@ -7,6 +7,27 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PeakReady" />
     <meta name="theme-color" content="#0a0e1a" />
+    <script>
+      (function () {
+        var mode = localStorage.getItem("peakready.theme.mode");
+        var accent = localStorage.getItem("peakready.theme.accent");
+        if (mode !== "light" && mode !== "dark") mode = "dark";
+        if (accent !== "peakready" && accent !== "neon" && accent !== "sunset") accent = "peakready";
+
+        var root = document.documentElement;
+        root.dataset.themeMode = mode;
+        root.dataset.themeAccent = accent;
+
+        var colors = {
+          dark: { peakready: "#0f0c29", neon: "#04170f", sunset: "#2b1207" },
+          light: { peakready: "#eef4ff", neon: "#effff3", sunset: "#fff4e9" }
+        };
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute("content", colors[mode][accent]);
+        }
+      })();
+    </script>
     <title>PeakReady</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />

@@ -6,9 +6,10 @@ if (typeof globalThis.crypto === "undefined") {
 
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { startReminderScheduler } from "./reminders";
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,6 +71,7 @@ app.use((req, res, next) => {
   await setupAuth(app);
   registerAuthRoutes(app);
   await registerRoutes(httpServer, app);
+  startReminderScheduler();
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

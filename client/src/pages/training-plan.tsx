@@ -37,6 +37,7 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
       await apiRequest("PATCH", `/api/sessions/${session.id}`, {
         completed: !session.completed,
         completedAt: !session.completed ? new Date().toISOString() : null,
+        completionSource: !session.completed ? "manual" : null,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
@@ -179,6 +180,11 @@ function SessionCard({
             >
               {session.description}
             </h3>
+            {session.completed && session.completionSource && (
+              <span className="text-[10px] uppercase tracking-widest font-bold text-brand-success/80 mt-1 block">
+                Completed via {session.completionSource}
+              </span>
+            )}
             {session.detailsMarkdown && (
               <span className="text-[10px] uppercase tracking-widest font-bold text-brand-primary/60 flex items-center gap-1 mt-1">
                 <Eye size={10} /> Tap for workout details

@@ -56,7 +56,11 @@ export function StravaPanel() {
       const data = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
-      toast({ title: `Synced ${data.synced} rides from Strava` });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      toast({
+        title: `Synced ${data.synced} rides from Strava`,
+        description: data.autoCompleted ? `${data.autoCompleted} sessions auto-completed` : undefined,
+      });
     } catch (err: any) {
       const msg = err.message || "";
       if (msg.includes("401") || msg.includes("Authorization") || msg.includes("permission")) {

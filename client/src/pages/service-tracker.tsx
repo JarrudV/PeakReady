@@ -1,14 +1,6 @@
 import { useState } from "react";
 import type { ServiceItem } from "@shared/schema";
-import {
-  Plus,
-  X,
-  Settings,
-  CheckCircle2,
-  Circle,
-  Clock,
-  Tag,
-} from "lucide-react";
+import { Plus, X, Settings, CheckCircle2, Circle, Clock, Tag, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +33,7 @@ export function ServiceTracker({ serviceItems }: Props) {
     shop?: string;
     cost?: number;
     notes?: string;
+    dueDate?: string;
   }) => {
     try {
       await apiRequest("POST", "/api/service-items", {
@@ -168,6 +161,13 @@ function ServiceItemCard({
               )}
             </div>
           )}
+          {item.dueDate && (
+            <div className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-2">
+              <span className="inline-flex items-center gap-1">
+                <CalendarDays size={12} className="text-brand-primary" /> Due {item.dueDate}
+              </span>
+            </div>
+          )}
           {item.notes && (
             <p className="text-sm text-brand-muted italic">
               &ldquo;{item.notes}&rdquo;
@@ -222,6 +222,7 @@ function AddServiceForm({
     shop?: string;
     cost?: number;
     notes?: string;
+    dueDate?: string;
   }) => void;
   onCancel: () => void;
 }) {
@@ -229,6 +230,7 @@ function AddServiceForm({
   const [shop, setShop] = useState("");
   const [cost, setCost] = useState("");
   const [notes, setNotes] = useState("");
+  const [dueDate, setDueDate] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,6 +240,7 @@ function AddServiceForm({
       shop: shop.trim() || undefined,
       cost: cost ? parseFloat(cost) : undefined,
       notes: notes.trim() || undefined,
+      dueDate: dueDate || undefined,
     });
   };
 
@@ -293,6 +296,18 @@ function AddServiceForm({
               data-testid="input-service-cost"
             />
           </div>
+        </div>
+        <div>
+          <label className="text-xs text-brand-muted font-medium block mb-1">
+            Due Date
+          </label>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
+            data-testid="input-service-due-date"
+          />
         </div>
         <div>
           <label className="text-xs text-brand-muted font-medium block mb-1">
