@@ -1,8 +1,8 @@
-const SW_VERSION = "v1";
+const SW_VERSION = "v2";
 const SHELL_CACHE = `peakready-shell-${SW_VERSION}`;
 const API_CACHE = `peakready-api-${SW_VERSION}`;
 
-const SHELL_ASSETS = ["/", "/index.html", "/manifest.json", "/favicon.png", "/icon-192.png", "/icon-512.png"];
+const SHELL_ASSETS = ["/index.html", "/manifest.json", "/favicon.png", "/icon-192.png", "/icon-512.png"];
 const OFFLINE_API_PATHS = new Set(["/api/sessions", "/api/metrics"]);
 const API_CACHE_ALLOWLIST = [
   "/api/sessions",
@@ -60,6 +60,11 @@ self.addEventListener("fetch", (event) => {
 
   const path = url.pathname;
 
+  if (request.mode === "navigate") {
+    event.respondWith(networkFirstNavigation(request));
+    return;
+  }
+
   if (path === "/api/logout") {
     event.respondWith(
       clearUserApiCache().then(() => fetch(request)).catch(() => fetch(request)),
@@ -78,7 +83,6 @@ self.addEventListener("fetch", (event) => {
   }
 
   const isAssetRequest =
-    request.mode === "navigate" ||
     request.destination === "script" ||
     request.destination === "style" ||
     request.destination === "image" ||
@@ -88,6 +92,23 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirstShell(request));
   }
 });
+
+async function networkFirstNavigation(request) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const network = await fetch(request);
+    if (network && network.ok) {
+      await cache.put("/index.html", network.clone());
+    }
+    return network;
+  } catch {
+    const cached = (await cache.match(request)) || (await cache.match("/index.html"));
+    if (cached) {
+      return cached;
+    }
+    return new Response("Offline", { status: 503, statusText: "Offline" });
+  }
+}
 
 self.addEventListener("push", (event) => {
   const data = event.data?.json?.() ?? {};
