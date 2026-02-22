@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
+import { clearOfflineSyncStorage } from "@/hooks/use-offline-sync";
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch("/api/auth/user", {
@@ -18,6 +19,10 @@ async function fetchUser(): Promise<User | null> {
 }
 
 async function logout(): Promise<void> {
+  if (navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: "CLEAR_USER_CACHE" });
+  }
+  clearOfflineSyncStorage();
   window.location.href = "/api/logout";
 }
 

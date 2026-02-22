@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Session, Metric, ServiceItem, GoalEvent } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { OfflineIndicator } from "@/components/offline-indicator";
 
 type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
 
@@ -115,7 +116,7 @@ function MainApp() {
   return (
     <div className="min-h-screen text-brand-text font-sans pb-24">
       <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-between">
-        <div className="w-9" />
+        <OfflineIndicator />
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
             <MountainSnow size={18} className="text-brand-bg" />

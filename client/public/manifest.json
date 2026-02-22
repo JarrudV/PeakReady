@@ -1,9 +1,11 @@
 {
+  "id": "/",
   "name": "PeakReady",
   "short_name": "PeakReady",
   "description": "Mountain bike training tracker",
   "start_url": "/",
   "display": "standalone",
+  "scope": "/",
   "background_color": "#0a0e1a",
   "theme_color": "#41d1ff",
   "icons": [
