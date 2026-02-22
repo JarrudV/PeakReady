@@ -27,19 +27,22 @@ function isAuthBypassEnabled() {
 }
 
 function validateRuntimeEnv() {
-  const missing = [];
-
-  if (!process.env.DATABASE_URL) {
-    missing.push("DATABASE_URL");
+  const requiredEnvVars = ["DATABASE_URL"];
+  if (process.env.AUTH_BYPASS !== "true") {
+    requiredEnvVars.push("REPL_ID", "SESSION_SECRET");
   }
 
-  if (!isAuthBypassEnabled()) {
-    if (!process.env.REPL_ID) {
-      missing.push("REPL_ID (or set AUTH_BYPASS=true)");
-    }
-    if (!process.env.SESSION_SECRET) {
-      missing.push("SESSION_SECRET (or set AUTH_BYPASS=true)");
-    }
+  const missing = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+
+  // Add specific messages for REPL_ID and SESSION_SECRET if they are missing
+  // and AUTH_BYPASS is not enabled.
+  if (missing.includes("REPL_ID") && process.env.AUTH_BYPASS !== "true") {
+    const index = missing.indexOf("REPL_ID");
+    missing[index] = "REPL_ID (or set AUTH_BYPASS=true)";
+  }
+  if (missing.includes("SESSION_SECRET") && process.env.AUTH_BYPASS !== "true") {
+    const index = missing.indexOf("SESSION_SECRET");
+    missing[index] = "SESSION_SECRET (or set AUTH_BYPASS=true)";
   }
 
   if (missing.length === 0) {
