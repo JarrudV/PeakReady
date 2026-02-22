@@ -163,7 +163,7 @@ export function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-9"
-                  placeholder="••••••••"
+                  placeholder="********"
                   required
                   minLength={6}
                   data-testid="input-password"

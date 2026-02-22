@@ -64,10 +64,14 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/api", (req, res, next) => {
     const path = req.path || "";
-    if (path === "/login" || path === "/logout" || path === "/callback" || path.startsWith("/auth/")) {
+    if (path === "/login" || path === "/logout" || path === "/callback" || path.startsWith("/auth/") || path === "/vapid-public-key") {
       return next();
     }
     return isAuthenticated(req, res, next);
+  });
+
+  app.get("/api/vapid-public-key", (_req, res) => {
+    res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || "" });
   });
 
   app.get("/api/sessions", async (req, res) => {
