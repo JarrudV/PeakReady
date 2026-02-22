@@ -6,7 +6,7 @@ if (typeof globalThis.crypto === "undefined") {
 
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { setupAuth, registerAuthRoutes } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startReminderScheduler } from "./reminders";

@@ -14,7 +14,7 @@ const API_CACHE_ALLOWLIST = [
   "/api/strava/activities",
   "/api/plan/templates",
 ];
-const API_BYPASS_PREFIXES = ["/api/auth/", "/api/login", "/api/logout", "/api/callback", "/api/strava/auth-url", "/api/strava/callback"];
+const API_BYPASS_PREFIXES = ["/api/auth/", "/api/logout", "/api/strava/auth-url", "/api/strava/callback"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

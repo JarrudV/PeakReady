@@ -18,7 +18,7 @@ const ai = new GoogleGenAI({
 
 export function registerChatRoutes(app: Express): void {
   const requireUserId = (req: Request, res: Response): string | null => {
-    const userId = (req.user as any)?.claims?.sub;
+    const userId = (req as any)?.user?.claims?.sub;
     if (!userId || typeof userId !== "string") {
       res.status(401).json({ error: "Unauthorized" });
       return null;

@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getFirebaseIdToken } from "@/lib/firebase";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -7,16 +8,51 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+async function buildAuthHeaders(headers?: HeadersInit): Promise<HeadersInit> {
+  const token = await getFirebaseIdToken();
+  const authHeader: Record<string, string> = {};
+  if (token) {
+    authHeader.Authorization = `Bearer ${token}`;
+  }
+
+  if (!headers) {
+    return authHeader;
+  }
+
+  if (headers instanceof Headers) {
+    const merged = new Headers(headers);
+    if (token) {
+      merged.set("Authorization", `Bearer ${token}`);
+    }
+    return merged;
+  }
+
+  if (Array.isArray(headers)) {
+    const merged = [...headers];
+    if (token) {
+      merged.push(["Authorization", `Bearer ${token}`]);
+    }
+    return merged;
+  }
+
+  return {
+    ...headers,
+    ...authHeader,
+  };
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers = await buildAuthHeaders(
+    data ? { "Content-Type": "application/json" } : undefined,
+  );
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
   });
 
   await throwIfResNotOk(res);
@@ -29,8 +65,9 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const headers = await buildAuthHeaders();
     const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

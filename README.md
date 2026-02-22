@@ -1,5 +1,37 @@
 # PeakReady
 
+## Auth Setup (Firebase)
+
+Replit auth has been removed. The app now uses Firebase Authentication with:
+- Google sign-in
+- Email/password sign-in (with account creation in the login form)
+
+### Railway environment variables
+
+Set all of these in Railway:
+
+Client/web config (used by Vite build):
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
+
+Server/admin config (used to verify Firebase ID tokens):
+- Either `FIREBASE_SERVICE_ACCOUNT_JSON` (full JSON service account as one string)
+- Or:
+  - `FIREBASE_PROJECT_ID`
+  - `FIREBASE_CLIENT_EMAIL`
+  - `FIREBASE_PRIVATE_KEY` (with `\\n` escaped newlines; app converts to real newlines)
+
+Optional local bypass:
+- `AUTH_BYPASS=true` for local dev without Firebase auth.
+
+### Firebase console checklist
+- Enable providers:
+  - Google
+  - Email/Password
+- Add authorized domain(s) for your deployed app URL.
+
 ## Consolidated Feature Guide (PWA + Strava + Push + Share + Themes)
 
 ### 1) PWA and Offline Caching

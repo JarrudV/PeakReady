@@ -22,27 +22,36 @@ function runCommand(command, args, env = process.env) {
   });
 }
 
-function isAuthBypassEnabled() {
-  return process.env.AUTH_BYPASS === "true";
-}
-
 function validateRuntimeEnv() {
-  const requiredEnvVars = ["DATABASE_URL"];
+  const missing = [];
+  if (!process.env.DATABASE_URL) {
+    missing.push("DATABASE_URL");
+  }
+
   if (process.env.AUTH_BYPASS !== "true") {
-    requiredEnvVars.push("REPL_ID", "SESSION_SECRET");
-  }
+    const hasFirebaseAdminJson = !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const hasFirebaseAdminParts =
+      !!process.env.FIREBASE_PROJECT_ID &&
+      !!process.env.FIREBASE_CLIENT_EMAIL &&
+      !!process.env.FIREBASE_PRIVATE_KEY;
 
-  const missing = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+    if (!hasFirebaseAdminJson && !hasFirebaseAdminParts) {
+      missing.push(
+        "Firebase Admin credentials (set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_PROJECT_ID/FIREBASE_CLIENT_EMAIL/FIREBASE_PRIVATE_KEY)"
+      );
+    }
 
-  // Add specific messages for REPL_ID and SESSION_SECRET if they are missing
-  // and AUTH_BYPASS is not enabled.
-  if (missing.includes("REPL_ID") && process.env.AUTH_BYPASS !== "true") {
-    const index = missing.indexOf("REPL_ID");
-    missing[index] = "REPL_ID (or set AUTH_BYPASS=true)";
-  }
-  if (missing.includes("SESSION_SECRET") && process.env.AUTH_BYPASS !== "true") {
-    const index = missing.indexOf("SESSION_SECRET");
-    missing[index] = "SESSION_SECRET (or set AUTH_BYPASS=true)";
+    const firebaseClientVars = [
+      "VITE_FIREBASE_API_KEY",
+      "VITE_FIREBASE_AUTH_DOMAIN",
+      "VITE_FIREBASE_PROJECT_ID",
+      "VITE_FIREBASE_APP_ID",
+    ];
+    for (const key of firebaseClientVars) {
+      if (!process.env[key]) {
+        missing.push(key);
+      }
+    }
   }
 
   if (missing.length === 0) {

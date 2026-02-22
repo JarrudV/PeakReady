@@ -6,7 +6,7 @@ import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } fr
 import { getWorkoutDetails } from "./workout-library";
 import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
-import { isAuthenticated } from "./replit_integrations/auth";
+import { isAuthenticated } from "./auth";
 import { getPublicVapidKey, isPushConfigured } from "./push";
 
 const sessionUpdateSchema = z.object({
@@ -50,7 +50,7 @@ const markNotificationReadSchema = z.object({
 });
 
 function requireUserId(req: Request, res: Response): string | null {
-  const userId = (req.user as any)?.claims?.sub;
+  const userId = (req as any)?.user?.claims?.sub;
   if (!userId || typeof userId !== "string") {
     res.status(401).json({ error: "Unauthorized" });
     return null;
