@@ -26,6 +26,20 @@ Server/admin config (used to verify Firebase ID tokens):
 Optional local bypass:
 - `AUTH_BYPASS=true` for local dev without Firebase auth.
 
+### Gemini / AI Plan generation
+Set one of these API key options:
+- `GEMINI_API_KEY` (recommended for direct Google Gemini API)
+- `AI_INTEGRATIONS_GEMINI_API_KEY` (Replit AI Integrations)
+
+Optional:
+- `GEMINI_BASE_URL` (custom proxy endpoint)
+- `AI_INTEGRATIONS_GEMINI_BASE_URL` (Replit Modelfarm endpoint)
+- `GEMINI_MODEL` (default is `gemini-2.5-flash` for plan generation)
+
+Notes:
+- If you use Replit AI Integrations locally, `AI_INTEGRATIONS_GEMINI_BASE_URL` must point to a reachable endpoint.
+- `http://localhost:1106/modelfarm/gemini` only works when that local proxy is actually running.
+
 ### Firebase console checklist
 - Enable providers:
   - Google

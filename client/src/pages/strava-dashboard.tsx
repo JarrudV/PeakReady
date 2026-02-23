@@ -59,7 +59,7 @@ export function StravaDashboard() {
 
     const handleConnect = async () => {
         try {
-            const res = await fetch("/api/strava/auth-url");
+            const res = await apiRequest("GET", "/api/strava/auth-url");
             const data = await res.json();
             window.location.href = data.url;
         } catch {

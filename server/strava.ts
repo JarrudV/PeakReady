@@ -1,11 +1,71 @@
 import { storage } from "./storage";
+import { createHmac, timingSafeEqual } from "crypto";
 import type { InsertStravaActivity, Session } from "@shared/schema";
 
 const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
 const AUTO_COMPLETE_TOLERANCE = 0.2;
+const STRAVA_STATE_TTL_MS = 10 * 60 * 1000;
 
 const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
+
+interface StravaStatePayload {
+  userId: string;
+  exp: number;
+}
+
+function getStateSecret(): string {
+  const secret = process.env.STRAVA_STATE_SECRET || process.env.SESSION_SECRET || process.env.STRAVA_CLIENT_SECRET;
+  if (!secret) {
+    throw new Error("Missing STRAVA_STATE_SECRET or SESSION_SECRET for Strava OAuth state");
+  }
+  return secret;
+}
+
+function signStatePayload(payloadBase64: string): string {
+  return createHmac("sha256", getStateSecret())
+    .update(payloadBase64)
+    .digest("base64url");
+}
+
+export function createStravaOAuthState(userId: string): string {
+  const payload: StravaStatePayload = {
+    userId,
+    exp: Date.now() + STRAVA_STATE_TTL_MS,
+  };
+
+  const payloadBase64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = signStatePayload(payloadBase64);
+  return `${payloadBase64}.${signature}`;
+}
+
+export function parseStravaOAuthState(state: string): string {
+  const [payloadBase64, signature] = state.split(".", 2);
+  if (!payloadBase64 || !signature) {
+    throw new Error("Invalid Strava OAuth state");
+  }
+
+  const expectedSignature = signStatePayload(payloadBase64);
+  const signatureBuffer = Buffer.from(signature, "utf8");
+  const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+
+  if (signatureBuffer.length !== expectedBuffer.length || !timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    throw new Error("Invalid Strava OAuth signature");
+  }
+
+  const raw = Buffer.from(payloadBase64, "base64url").toString("utf8");
+  const payload = JSON.parse(raw) as Partial<StravaStatePayload>;
+
+  if (!payload.userId || typeof payload.userId !== "string" || !payload.exp || typeof payload.exp !== "number") {
+    throw new Error("Invalid Strava OAuth state payload");
+  }
+
+  if (Date.now() > payload.exp) {
+    throw new Error("Strava OAuth state expired");
+  }
+
+  return payload.userId;
+}
 
 async function getAccessToken(refreshToken: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
@@ -240,11 +300,21 @@ async function autoCompleteSessionsFromActivities(userId: string, activities: St
   return selected.length;
 }
 
-export function getStravaAuthUrl(redirectUri: string): string {
+export function getStravaAuthUrl(redirectUri: string, state?: string): string {
   const clientId = process.env.STRAVA_CLIENT_ID;
   if (!clientId) throw new Error("STRAVA_CLIENT_ID not set");
 
-  return `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=read,activity:read_all&approval_prompt=force`;
+  const url = new URL("https://www.strava.com/oauth/authorize");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "read,activity:read_all");
+  url.searchParams.set("approval_prompt", "force");
+  if (state) {
+    url.searchParams.set("state", state);
+  }
+
+  return url.toString();
 }
 
 export async function exchangeCodeForToken(code: string): Promise<{ refresh_token: string; access_token: string; expires_at: number }> {

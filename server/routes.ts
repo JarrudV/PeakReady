@@ -4,7 +4,14 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
 import { getWorkoutDetails } from "./workout-library";
-import { syncStravaActivities, isStravaConfigured, getStravaAuthUrl, exchangeCodeForToken } from "./strava";
+import {
+  syncStravaActivities,
+  isStravaConfigured,
+  getStravaAuthUrl,
+  exchangeCodeForToken,
+  createStravaOAuthState,
+  parseStravaOAuthState,
+} from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
 import { isAuthenticated } from "./auth";
 import { getPublicVapidKey, isPushConfigured } from "./push";
@@ -64,7 +71,14 @@ export async function registerRoutes(
 ): Promise<Server> {
   app.use("/api", (req, res, next) => {
     const path = req.path || "";
-    if (path === "/login" || path === "/logout" || path === "/callback" || path.startsWith("/auth/") || path === "/vapid-public-key") {
+    if (
+      path === "/login" ||
+      path === "/logout" ||
+      path === "/callback" ||
+      path === "/strava/callback" ||
+      path.startsWith("/auth/") ||
+      path === "/vapid-public-key"
+    ) {
       return next();
     }
     return isAuthenticated(req, res, next);
@@ -491,10 +505,14 @@ export async function registerRoutes(
 
   app.get("/api/strava/auth-url", async (req, res) => {
     try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
       const protocol = req.headers["x-forwarded-proto"] || "http";
       const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
       const redirectUri = `${protocol}://${host}/api/strava/callback`;
-      const url = getStravaAuthUrl(redirectUri);
+      const state = createStravaOAuthState(userId);
+      const url = getStravaAuthUrl(redirectUri, state);
       res.json({ url });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -502,8 +520,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/strava/callback", async (req, res) => {
-    const userId = requireUserId(req, res);
-    if (!userId) return;
+    const state = req.query.state as string;
     const code = req.query.code as string;
     const error = req.query.error as string;
 
@@ -511,11 +528,12 @@ export async function registerRoutes(
       return res.redirect("/?strava=denied");
     }
 
-    if (!code) {
+    if (!code || !state) {
       return res.status(400).send("Missing authorization code");
     }
 
     try {
+      const userId = parseStravaOAuthState(state);
       const tokenData = await exchangeCodeForToken(code);
       await storage.setSetting(userId, "stravaRefreshToken", tokenData.refresh_token);
       await storage.setSetting(userId, "stravaHasActivityScope", "true");

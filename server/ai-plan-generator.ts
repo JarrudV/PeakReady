@@ -1,30 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient, getGeminiModel } from "./gemini-client";
 import type { InsertSession } from "@shared/schema";
-
-let aiClient: GoogleGenAI | null = null;
-
-function getAiClient(): GoogleGenAI {
-  if (aiClient) {
-    return aiClient;
-  }
-
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-
-  if (!apiKey || !baseUrl) {
-    throw new Error("AI plan generation is not configured. Set AI_INTEGRATIONS_GEMINI_API_KEY and AI_INTEGRATIONS_GEMINI_BASE_URL.");
-  }
-
-  aiClient = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      apiVersion: "",
-      baseUrl,
-    },
-  });
-
-  return aiClient;
-}
 
 export interface PlanRequest {
   eventName: string;
@@ -94,18 +69,25 @@ Return ONLY a JSON array, no other text.`;
 }
 
 export async function generateAIPlan(req: PlanRequest): Promise<InsertSession[]> {
-  const ai = getAiClient();
+  const ai = getGeminiClient();
+  const model = getGeminiModel("gemini-2.5-flash");
   const prompt = buildPrompt(req);
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      maxOutputTokens: 16384,
-      temperature: 0.7,
-      responseMimeType: "application/json",
-    },
-  });
+  let response: { text?: string };
+  try {
+    response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        maxOutputTokens: 16384,
+        temperature: 0.7,
+        responseMimeType: "application/json",
+      },
+    });
+  } catch (err: any) {
+    const message = err?.message || "Unknown Gemini error";
+    throw new Error(`Gemini request failed (${model}). ${message}`);
+  }
 
   const text = response.text || "";
   console.log("AI response length:", text.length, "chars");
