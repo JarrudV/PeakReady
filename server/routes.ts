@@ -476,8 +476,14 @@ export async function registerRoutes(
     const lastSync = await storage.getSetting(userId, "stravaLastSync");
     const hasScope = await storage.getSetting(userId, "stravaHasActivityScope");
     const refreshToken = await storage.getSetting(userId, "stravaRefreshToken");
+
+    // The frontend uses `configured` to know if it should show the "Connect" button at all.
+    // So `configured` means the server has credentials.
+    // The frontend infers if the *user* is connected by looking at the auth flow or lack of activities.
+    // (We also pass back `isConnected` explicitly just in case)
     res.json({
-      configured: isStravaConfigured() && !!refreshToken,
+      configured: isStravaConfigured(),
+      isConnected: !!refreshToken,
       lastSync,
       hasActivityScope: hasScope === "true",
     });
