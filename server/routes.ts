@@ -208,7 +208,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "URL is required" });
       }
 
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!response.ok) {
         throw new Error(`Failed to fetch URL: ${response.statusText}`);
       }
@@ -220,7 +220,60 @@ export async function registerRoutes(
       const title = $('meta[property="og:title"]').attr('content') || $('title').text() || "";
       const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || "";
 
-      res.json({ title: title.trim(), description: description.trim() });
+      // Clean body text for heuristic extraction
+      const bodyText = $('body').text().replace(/\s+/g, ' ');
+
+      // Extract Distance (look for numbers followed by km, k, miles, mi)
+      let distanceKm: number | null = null;
+      const distMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*(?:km|k|kilometer|kilometers)/i);
+      if (distMatch) {
+        distanceKm = parseFloat(distMatch[1]);
+      } else {
+        const miMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)/i);
+        if (miMatch) distanceKm = parseFloat(miMatch[1]) * 1.60934;
+      }
+
+      // Extract Elevation (look for numbers followed by m, meters, ft, feet, vertical)
+      let elevationMeters: number | null = null;
+      const elevMatchM = bodyText.match(/(\d{3,4}(?:,\d{3})?)\s*(?:m|meter|meters|\vm|\+m)\b/i);
+      if (elevMatchM) {
+        elevationMeters = parseInt(elevMatchM[1].replace(/,/g, ''), 10);
+      } else {
+        const elevMatchFt = bodyText.match(/(\d{3,4}(?:,\d{3})?)\s*(?:ft|feet|vertical feet)\b/i);
+        if (elevMatchFt) elevationMeters = Math.round(parseInt(elevMatchFt[1].replace(/,/g, ''), 10) * 0.3048);
+      }
+
+      // Extract Date (Look for common formats like DD MMM YYYY or YYYY-MM-DD)
+      let dateStr: string | null = null;
+      const dateRegexes = [
+        /\b(202[4-9])-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/, // YYYY-MM-DD
+        /\b(0[1-9]|[12]\d|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(202[4-9])\b/i // DD MMM YYYY
+      ];
+
+      for (const rx of dateRegexes) {
+        const match = bodyText.match(rx);
+        if (match) {
+          if (match[2].length >= 3 && isNaN(parseInt(match[2], 10))) {
+            // Month text match (DD MMM YYYY) -> convert to Date Object then to ISO String
+            try {
+              const d = new Date(`${match[1]} ${match[2]} ${match[3]}`);
+              if (!isNaN(d.getTime())) dateStr = d.toISOString().split('T')[0];
+            } catch { }
+          } else {
+            // Exact match format (YYYY-MM-DD)
+            dateStr = match[0];
+          }
+          break;
+        }
+      }
+
+      res.json({
+        title: title.trim(),
+        description: description.trim(),
+        distanceKm: distanceKm ? Math.round(distanceKm) : null,
+        elevationMeters: elevationMeters || null,
+        date: dateStr || null
+      });
     } catch (err: any) {
       console.error("Scrape error:", err.message);
       res.status(500).json({ error: "Failed to scrape event website" });

@@ -89,8 +89,14 @@ export function EventTracker({ goal }: Props) {
     try {
       const res = await apiRequest("POST", `/api/scrape-event`, { url: scrapeUrl });
       const data = await res.json();
+
       if (data.title) setName(data.title);
+      if (data.distanceKm) setDistance(data.distanceKm.toString());
+      if (data.elevationMeters) setElevation(data.elevationMeters.toString());
+      if (data.date) setDate(data.date);
+
       if (!link) setLink(scrapeUrl);
+
       toast({ title: "Event details imported successfully!" });
     } catch {
       toast({ title: "Failed to scrape URL", variant: "destructive" });
