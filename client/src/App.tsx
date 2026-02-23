@@ -11,12 +11,14 @@ import {
   MountainSnow,
   User,
   Settings,
+  Bike,
 } from "lucide-react";
 import { Dashboard } from "@/pages/dashboard";
 import { TrainingPlan } from "@/pages/training-plan";
 import { Metrics } from "@/pages/metrics";
 import { ServiceTracker } from "@/pages/service-tracker";
 import { EventTracker } from "@/pages/event-tracker";
+import { StravaDashboard } from "@/pages/strava-dashboard";
 import { LoginPage } from "@/pages/login";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -35,7 +37,7 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 
-type Tab = "dashboard" | "plan" | "metrics" | "service" | "events";
+type Tab = "dashboard" | "plan" | "metrics" | "service" | "events" | "strava";
 
 function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
@@ -106,21 +108,21 @@ function MainApp() {
     setActiveWeek(week);
     try {
       await apiRequest("PUT", "/api/settings/activeWeek", { value: week.toString() });
-    } catch {}
+    } catch { }
   };
 
   const handleThemeModeChange = async (mode: ThemeMode) => {
     setThemeMode(mode);
     try {
       await apiRequest("PUT", "/api/settings/themeMode", { value: mode });
-    } catch {}
+    } catch { }
   };
 
   const handleThemeAccentChange = async (accent: ThemeAccent) => {
     setThemeAccent(accent);
     try {
       await apiRequest("PUT", "/api/settings/themeAccent", { value: accent });
-    } catch {}
+    } catch { }
   };
 
   if (authLoading) {
@@ -229,9 +231,12 @@ function MainApp() {
         {activeTab === "events" && (
           <EventTracker goal={goal || undefined} />
         )}
+        {activeTab === "strava" && (
+          <StravaDashboard />
+        )}
       </main>
 
-      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 px-4 py-3 flex justify-between items-center z-30 pb-safe shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
+      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 px-2 py-3 flex justify-between items-center z-30 pb-safe shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
         <NavItem
           icon={<Home size={22} />}
           label="Dash"
@@ -267,6 +272,13 @@ function MainApp() {
           isActive={activeTab === "service"}
           onClick={() => setActiveTab("service")}
           testId="nav-service"
+        />
+        <NavItem
+          icon={<Bike size={22} className="text-[#FC4C02]" />}
+          label="Strava"
+          isActive={activeTab === "strava"}
+          onClick={() => setActiveTab("strava")}
+          testId="nav-strava"
         />
       </nav>
 
@@ -317,10 +329,10 @@ function NavItem({
           "mb-1 flex items-center justify-center",
           isActive && !isHighlight && "scale-110",
           isHighlight &&
-            "p-3 rounded-full bg-gradient-primary shadow-[0_0_15px_rgba(189,52,254,0.5)] -mt-6 ring-4 ring-brand-bg",
+          "p-3 rounded-full bg-gradient-primary shadow-[0_0_15px_rgba(189,52,254,0.5)] -mt-6 ring-4 ring-brand-bg",
           isActive &&
-            isHighlight &&
-            "scale-110 shadow-[0_0_25px_rgba(65,209,255,0.8)] ring-brand-panel"
+          isHighlight &&
+          "scale-110 shadow-[0_0_25px_rgba(65,209,255,0.8)] ring-brand-panel"
         )}
       >
         {icon}
