@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { onAuthStateChanged, signOut, type User as FirebaseUser } from "firebase/auth";
+import { onAuthStateChanged, signOut, getRedirectResult, type User as FirebaseUser } from "firebase/auth";
 import type { User } from "@shared/models/auth";
 import { clearOfflineSyncStorage } from "@/hooks/use-offline-sync";
 import { firebaseAuth } from "@/lib/firebase";
@@ -52,6 +52,10 @@ export function useAuth() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    getRedirectResult(firebaseAuth).catch((error) => {
+      console.error("Firebase redirect auth error:", error);
+    });
+
     const unsub = onAuthStateChanged(firebaseAuth, (user) => {
       setFirebaseUser(user);
       setAuthReady(true);
