@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { onAuthStateChanged, signOut, getRedirectResult, type User as FirebaseUser } from "firebase/auth";
+import { onAuthStateChanged, signOut, type User as FirebaseUser } from "firebase/auth";
 import type { User } from "@shared/models/auth";
 import { clearOfflineSyncStorage } from "@/hooks/use-offline-sync";
 import { firebaseAuth } from "@/lib/firebase";
@@ -28,6 +28,8 @@ async function fetchUser(): Promise<User | null> {
   }
 
   if (response.status === 401) {
+    const errorText = await response.text().catch(() => "");
+    console.error("401 Unauthorized from /api/auth/user. Response:", errorText);
     return null;
   }
 
@@ -52,10 +54,6 @@ export function useAuth() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    getRedirectResult(firebaseAuth).catch((error) => {
-      console.error("Firebase redirect auth error:", error);
-    });
-
     const unsub = onAuthStateChanged(firebaseAuth, (user) => {
       setFirebaseUser(user);
       setAuthReady(true);

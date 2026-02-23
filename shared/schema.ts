@@ -63,6 +63,7 @@ export const goalEvents = pgTable("goal_events", {
   distanceKm: real("distance_km"),
   elevationMeters: integer("elevation_meters"),
   notes: text("notes"),
+  gpxUrl: text("gpx_url"),
   createdAt: text("created_at").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),

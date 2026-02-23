@@ -10,7 +10,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
   updateProfile,
 } from "firebase/auth";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,15 @@ export function LoginPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      await signInWithRedirect(firebaseAuth, googleProvider);
+      await signInWithPopup(firebaseAuth, googleProvider);
     } catch (error: any) {
-      toast({
-        title: "Google sign-in failed",
-        description: error?.message ?? "Please try again.",
-        variant: "destructive",
-      });
+      if (error?.code !== 'auth/popup-closed-by-user') {
+        toast({
+          title: "Google sign-in failed",
+          description: error?.message ?? "Please try again.",
+          variant: "destructive",
+        });
+      }
       setIsLoading(false);
     }
   };
