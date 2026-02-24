@@ -11,7 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { format, parseISO } from "date-fns";
-import { Plus, X, Weight, HeartPulse } from "lucide-react";
+import { Plus, X, Weight, HeartPulse, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +56,19 @@ export function Metrics({ metrics, sessions }: Props) {
       toast({ title: "Metrics saved" });
     } catch {
       toast({ title: "Failed to save metrics", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteEntry = async (metricId: string) => {
+    const confirmed = window.confirm("Delete this metric entry?");
+    if (!confirmed) return;
+
+    try {
+      await apiRequest("DELETE", `/api/metrics/${metricId}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
+      toast({ title: "Metric deleted" });
+    } catch {
+      toast({ title: "Failed to delete metric", variant: "destructive" });
     }
   };
 
@@ -228,20 +241,31 @@ export function Metrics({ metrics, sessions }: Props) {
                   <span className="font-bold text-sm text-brand-text">
                     {format(parseISO(m.date), "MMM d, yyyy")}
                   </span>
-                  {m.fatigue && (
-                    <span
-                      className={cn(
-                        "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded-md border",
-                        m.fatigue >= 8
-                          ? "bg-brand-danger/10 text-brand-danger border-brand-danger/30 shadow-[0_0_8px_rgba(255,92,122,0.2)]"
-                          : m.fatigue >= 5
-                            ? "bg-brand-warning/10 text-brand-warning border-brand-warning/30 shadow-[0_0_8px_rgba(255,168,0,0.2)]"
-                            : "bg-brand-success/10 text-brand-success border-brand-success/30"
-                      )}
+                  <div className="flex items-center gap-2">
+                    {m.fatigue && (
+                      <span
+                        className={cn(
+                          "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded-md border",
+                          m.fatigue >= 8
+                            ? "bg-brand-danger/10 text-brand-danger border-brand-danger/30 shadow-[0_0_8px_rgba(255,92,122,0.2)]"
+                            : m.fatigue >= 5
+                              ? "bg-brand-warning/10 text-brand-warning border-brand-warning/30 shadow-[0_0_8px_rgba(255,168,0,0.2)]"
+                              : "bg-brand-success/10 text-brand-success border-brand-success/30"
+                        )}
+                      >
+                        Fatigue: {m.fatigue}/10
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteEntry(m.id)}
+                      className="p-1.5 rounded-md text-brand-muted hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
+                      aria-label={`Delete metric for ${format(parseISO(m.date), "MMM d, yyyy")}`}
+                      data-testid={`button-delete-metric-${m.id}`}
                     >
-                      Fatigue: {m.fatigue}/10
-                    </span>
-                  )}
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm mt-3">
                   {m.weightKg && (
@@ -378,6 +402,9 @@ function AddMetricForm({
               placeholder="e.g. 75.5"
               data-testid="input-metric-weight"
             />
+            <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
+              Tracks long-term body trend so training load and nutrition can be adjusted early.
+            </p>
           </div>
           <div>
             <label className="text-xs text-brand-muted font-medium block mb-1">
@@ -391,6 +418,9 @@ function AddMetricForm({
               placeholder="bpm"
               data-testid="input-metric-hr"
             />
+            <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
+              Compare to your normal baseline. A higher-than-usual value can indicate poor recovery or rising stress.
+            </p>
           </div>
         </div>
         <div>
@@ -424,6 +454,9 @@ function AddMetricForm({
             <span>1 (Fresh)</span>
             <span>10 (Exhausted)</span>
           </div>
+          <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
+            Rate how you feel overall today: 1 = very fresh and ready, 10 = fully exhausted and needs recovery.
+          </p>
         </div>
         <div>
           <label className="text-xs text-brand-muted font-medium block mb-1">

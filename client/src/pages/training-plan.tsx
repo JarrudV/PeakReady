@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { Session, GoalEvent } from "@shared/schema";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { Session, GoalEvent, Metric, StravaActivity } from "@shared/schema";
 import {
   CheckCircle2,
   Circle,
@@ -11,6 +12,7 @@ import {
   X,
   Eye,
   Sparkles,
+  Lightbulb,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -25,11 +27,88 @@ interface Props {
   goal?: GoalEvent;
 }
 
+type SessionPatch = Partial<Pick<Session, "type" | "description" | "zone" | "strength" | "minutes" | "notes">>;
+
+interface AdaptiveSuggestion {
+  id: string;
+  kind: "reduce-intensity" | "increase-volume" | "rest-day-hard-ride";
+  title: string;
+  description: string;
+  actionLabel: string;
+  sessionId: string;
+  patch: SessionPatch;
+  note: string;
+}
+
+const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+function dayOrder(day: string): number {
+  const idx = WEEKDAY_ORDER.indexOf(day.slice(0, 3).toLowerCase());
+  return idx >= 0 ? idx : 99;
+}
+
+function addDaysIso(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return dateStr;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function adjustMinutes(minutes: number, factor: number): number {
+  return Math.max(20, Math.round(minutes * (1 + factor)));
+}
+
+function appendRecoveryNote(existing: string | null, note: string): string {
+  if (!existing) return note;
+  if (existing.includes(note)) return existing;
+  return `${existing}\n${note}`;
+}
+
+function getLatestFatigue(metrics: Metric[]): number | null {
+  const fatigueEntries = metrics
+    .filter((metric) => metric.fatigue !== null && metric.fatigue !== undefined)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  return fatigueEntries.length > 0 ? Number(fatigueEntries[fatigueEntries.length - 1].fatigue) : null;
+}
+
+function isHardRide(activity: StravaActivity): boolean {
+  const movingTime = activity.movingTime || 0;
+  const elevation = activity.totalElevationGain || 0;
+  const distance = activity.distance || 0;
+  const averageHr = activity.averageHeartrate || 0;
+  const sufferScore = activity.sufferScore || 0;
+
+  if (movingTime >= 2 * 60 * 60) return true;
+  if (sufferScore >= 120) return true;
+  if (movingTime >= 75 * 60 && (averageHr >= 150 || elevation >= 600 || distance >= 30000)) return true;
+  return false;
+}
+
 export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
-  const weeklySessions = sessions.filter((s) => s.week === activeWeek);
+  const weeklySessions = useMemo(
+    () =>
+      sessions
+        .filter((session) => session.week === activeWeek)
+        .sort((a, b) => {
+          if (a.scheduledDate && b.scheduledDate) {
+            return a.scheduledDate.localeCompare(b.scheduledDate);
+          }
+          return dayOrder(a.day) - dayOrder(b.day);
+        }),
+    [sessions, activeWeek],
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
   const [showAIBuilder, setShowAIBuilder] = useState(false);
+  const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
+  const { data: metrics = [] } = useQuery<Metric[]>({
+    queryKey: ["/api/metrics"],
+  });
+  const { data: stravaActivities = [] } = useQuery<StravaActivity[]>({
+    queryKey: ["/api/strava/activities"],
+  });
   const { toast } = useToast();
 
   const handleToggleComplete = async (session: Session) => {
@@ -59,6 +138,121 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
     }
   };
 
+  const suggestions = useMemo<AdaptiveSuggestion[]>(() => {
+    const list: AdaptiveSuggestion[] = [];
+    const latestFatigue = getLatestFatigue(metrics);
+
+    const previousWeekSessions = sessions.filter((session) => session.week === activeWeek - 1);
+    const previousWeekCompletionPct = previousWeekSessions.length
+      ? (previousWeekSessions.filter((session) => session.completed).length / previousWeekSessions.length) * 100
+      : 0;
+
+    const openRideSessions = weeklySessions.filter(
+      (session) => !session.completed && (session.type === "Ride" || session.type === "Long Ride"),
+    );
+
+    if (latestFatigue !== null && latestFatigue >= 8) {
+      const target = openRideSessions[0];
+      if (target) {
+        list.push({
+          id: `reduce-intensity-${target.id}`,
+          kind: "reduce-intensity",
+          title: "High fatigue: reduce intensity",
+          description: `Latest fatigue is ${latestFatigue}/10. Downshift your next ride to recovery effort.`,
+          actionLabel: "Apply Easy Day",
+          sessionId: target.id,
+          patch: {
+            minutes: adjustMinutes(target.minutes, -0.15),
+            zone: "Z1-Z2",
+          },
+          note: "Adaptive suggestion: fatigue >= 8, keep this session easy and focus on recovery.",
+        });
+      }
+    }
+
+    if (latestFatigue !== null && latestFatigue <= 3 && previousWeekCompletionPct >= 90) {
+      const target = openRideSessions.find((session) => session.type === "Long Ride") || openRideSessions[0];
+      if (target) {
+        list.push({
+          id: `increase-volume-${target.id}`,
+          kind: "increase-volume",
+          title: "Low fatigue + high completion: slight volume increase",
+          description: `Fatigue is ${latestFatigue}/10 and previous week completion was ${Math.round(previousWeekCompletionPct)}%.`,
+          actionLabel: "Apply +12% Volume",
+          sessionId: target.id,
+          patch: {
+            minutes: adjustMinutes(target.minutes, 0.12),
+          },
+          note: "Adaptive suggestion: low fatigue with strong prior-week completion; small volume increase applied.",
+        });
+      }
+    }
+
+    const hardRidesByDate = new Map<string, StravaActivity>();
+    for (const activity of stravaActivities) {
+      if (!isHardRide(activity)) continue;
+      const rideDate = activity.startDate.slice(0, 10);
+      if (!hardRidesByDate.has(rideDate)) {
+        hardRidesByDate.set(rideDate, activity);
+      }
+    }
+
+    const restSessions = weeklySessions.filter((session) => session.type === "Rest" && !!session.scheduledDate);
+    for (const restSession of restSessions) {
+      const restDate = restSession.scheduledDate!;
+      const hardRide = hardRidesByDate.get(restDate);
+      if (!hardRide) continue;
+
+      const nextDate = addDaysIso(restDate, 1);
+      const nextSession = weeklySessions.find(
+        (session) => session.scheduledDate === nextDate && !session.completed,
+      );
+      if (!nextSession) continue;
+
+      list.push({
+        id: `rest-day-hard-ride-${nextSession.id}`,
+        kind: "rest-day-hard-ride",
+        title: "Hard ride logged on rest day",
+        description: `${hardRide.name} was hard enough to warrant a lighter next day.`,
+        actionLabel: "Make Next Day Recovery",
+        sessionId: nextSession.id,
+        patch: {
+          type: "Ride",
+          description: "Recovery Ride (Adaptive)",
+          strength: false,
+          zone: "Z1-Z2",
+          minutes: adjustMinutes(nextSession.minutes, -0.2),
+        },
+        note: `Adaptive suggestion: hard Strava ride logged on rest day (${restDate}); converted next day to recovery.`,
+      });
+      break;
+    }
+
+    return list;
+  }, [activeWeek, metrics, sessions, stravaActivities, weeklySessions]);
+
+  const handleApplySuggestion = async (suggestion: AdaptiveSuggestion) => {
+    const targetSession = sessions.find((session) => session.id === suggestion.sessionId);
+    if (!targetSession) {
+      toast({ title: "Suggestion target no longer exists", variant: "destructive" });
+      return;
+    }
+
+    setApplyingSuggestionId(suggestion.id);
+    try {
+      await apiRequest("PATCH", `/api/sessions/${targetSession.id}`, {
+        ...suggestion.patch,
+        notes: appendRecoveryNote(targetSession.notes, suggestion.note),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      toast({ title: "Suggestion applied", description: suggestion.title });
+    } catch {
+      toast({ title: "Failed to apply suggestion", variant: "destructive" });
+    } finally {
+      setApplyingSuggestionId(null);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4" data-testid="training-plan-view">
       <h2 className="text-2xl font-bold mb-2 text-brand-text" data-testid="text-plan-title">
@@ -75,6 +269,47 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
         <Sparkles size={14} />
         Build Plan with AI
       </button>
+
+      <div className="glass-panel p-4 border-brand-secondary/30" data-testid="card-week-suggestions">
+        <div className="flex items-center gap-2 mb-2">
+          <Lightbulb size={14} className="text-brand-secondary" />
+          <h3 className="text-xs font-black uppercase tracking-widest text-brand-text">
+            Suggestions
+          </h3>
+        </div>
+        <p className="text-[11px] text-brand-muted mb-3 leading-relaxed">
+          Adaptive suggestions are based on fatigue, completion, and recent Strava rides. Nothing changes unless you click Apply.
+        </p>
+
+        {suggestions.length === 0 ? (
+          <p className="text-xs text-brand-muted">No adaptive changes recommended right now.</p>
+        ) : (
+          <div className="space-y-2.5">
+            {suggestions.map((suggestion) => (
+              <div
+                key={suggestion.id}
+                className="rounded-lg border border-brand-border/60 bg-brand-bg/60 p-3"
+                data-testid={`suggestion-${suggestion.kind}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-brand-text">{suggestion.title}</h4>
+                    <p className="text-xs text-brand-muted mt-1">{suggestion.description}</p>
+                  </div>
+                  <button
+                    onClick={() => handleApplySuggestion(suggestion)}
+                    disabled={applyingSuggestionId === suggestion.id}
+                    className="shrink-0 rounded-md px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold bg-gradient-secondary text-brand-bg disabled:opacity-50"
+                    data-testid={`button-apply-suggestion-${suggestion.kind}`}
+                  >
+                    {applyingSuggestionId === suggestion.id ? "Applying..." : suggestion.actionLabel}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-col gap-4">
         {weeklySessions.map((session) => (

@@ -5,7 +5,7 @@ import {
   totalCompletedSessions,
   latestMetric,
   planStatus,
-  calculateReadinessScore,
+  calculateReadinessDetails,
 } from "@/lib/stats";
 import {
   ChevronDown,
@@ -65,6 +65,7 @@ interface Props {
   metrics: Metric[];
   goal?: GoalEvent;
   activeWeek: number;
+  maxWeek: number;
   onWeekChange: (week: number) => void;
 }
 
@@ -73,6 +74,7 @@ export function Dashboard({
   metrics,
   goal,
   activeWeek,
+  maxWeek,
   onWeekChange,
 }: Props) {
   const currentWeekStats = weekStats(sessions, activeWeek);
@@ -82,7 +84,9 @@ export function Dashboard({
 
   const totalSessions = totalCompletedSessions(sessions);
   const statusInfo = planStatus(sessions, goal);
-  const readinessScore = calculateReadinessScore(sessions, metrics, activeWeek);
+  const readiness = calculateReadinessDetails(metrics);
+  const readinessScore = readiness.score;
+  const [showReadinessInfo, setShowReadinessInfo] = useState(false);
 
   const currentWeight = latestMetric(metrics, "weightKg");
 
@@ -112,7 +116,7 @@ export function Dashboard({
             className="appearance-none glass-panel py-2 pl-4 pr-10 text-brand-text font-bold uppercase tracking-widest text-xs focus:outline-none focus:ring-1 focus:ring-brand-primary cursor-pointer"
             data-testid="select-week"
           >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((w) => (
+            {Array.from({ length: Math.max(1, maxWeek) }, (_, i) => i + 1).map((w) => (
               <option
                 className="bg-brand-bg text-brand-text"
                 key={w}
@@ -181,10 +185,28 @@ export function Dashboard({
             <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold flex items-center gap-1">
               <Zap size={12} className="text-brand-primary" /> Readiness Score
             </h3>
-            <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">
-              0-100
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReadinessInfo((prev) => !prev)}
+                className="text-[10px] font-bold text-brand-primary uppercase tracking-widest hover:underline"
+                data-testid="button-readiness-info"
+              >
+                How this is calculated
+              </button>
+              <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">
+                0-100
+              </span>
+            </div>
           </div>
+          {showReadinessInfo && (
+            <p
+              className="mt-2 text-[11px] text-brand-muted leading-relaxed relative z-10"
+              data-testid="text-readiness-info"
+            >
+              Readiness is mainly based on your latest fatigue score (1 fresh, 10 exhausted). If a resting-HR baseline exists, today's resting HR adjusts the score slightly.
+            </p>
+          )}
           <div className="mt-4 flex items-center justify-between relative z-10">
             <div className="flex items-baseline gap-2">
               <span
@@ -208,6 +230,15 @@ export function Dashboard({
                     : "Recover"}
               </span>
             </div>
+            {readiness.usesRhrBaseline && readiness.baselineRhr !== null ? (
+              <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">
+                Baseline RHR: {readiness.baselineRhr} bpm
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">
+                Using fatigue only
+              </span>
+            )}
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import {
   Home,
   CalendarDays,
   Activity,
+  MessageSquare,
   Wrench,
   MountainSnow,
   User,
@@ -19,6 +20,7 @@ import { Metrics } from "@/pages/metrics";
 import { ServiceTracker } from "@/pages/service-tracker";
 import { EventTracker } from "@/pages/event-tracker";
 import { StravaDashboard } from "@/pages/strava-dashboard";
+import { CoachPage } from "@/pages/coach";
 import { LoginPage } from "@/pages/login";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -37,7 +39,7 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 
-type Tab = "dashboard" | "plan" | "metrics" | "service" | "events" | "strava";
+type Tab = "dashboard" | "plan" | "coach" | "metrics" | "service" | "events" | "strava";
 
 function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
@@ -63,7 +65,7 @@ function MainApp() {
   useEffect(() => {
     if (savedWeek?.value) {
       const parsed = parseInt(savedWeek.value, 10);
-      if (parsed >= 1 && parsed <= 12) setActiveWeek(parsed);
+      if (parsed >= 1) setActiveWeek(parsed);
     }
   }, [savedWeek]);
 
@@ -88,6 +90,7 @@ function MainApp() {
     queryKey: ["/api/sessions"],
     enabled: isAuthenticated,
   });
+  const maxWeek = sessions.length > 0 ? Math.max(...sessions.map((session) => session.week), 1) : 12;
 
   const { data: metrics = [], isLoading: metricsLoading } = useQuery<Metric[]>({
     queryKey: ["/api/metrics"],
@@ -104,10 +107,17 @@ function MainApp() {
     enabled: isAuthenticated,
   });
 
+  useEffect(() => {
+    if (activeWeek > maxWeek) {
+      setActiveWeek(maxWeek);
+    }
+  }, [activeWeek, maxWeek]);
+
   const handleWeekChange = async (week: number) => {
-    setActiveWeek(week);
+    const boundedWeek = Math.min(Math.max(week, 1), maxWeek);
+    setActiveWeek(boundedWeek);
     try {
-      await apiRequest("PUT", "/api/settings/activeWeek", { value: week.toString() });
+      await apiRequest("PUT", "/api/settings/activeWeek", { value: boundedWeek.toString() });
     } catch { }
   };
 
@@ -218,11 +228,15 @@ function MainApp() {
             metrics={metrics}
             goal={goal || undefined}
             activeWeek={activeWeek}
+            maxWeek={maxWeek}
             onWeekChange={handleWeekChange}
           />
         )}
         {activeTab === "plan" && (
           <TrainingPlan sessions={sessions} activeWeek={activeWeek} goal={goal || undefined} />
+        )}
+        {activeTab === "coach" && (
+          <CoachPage />
         )}
         {activeTab === "metrics" && <Metrics metrics={metrics} sessions={sessions} />}
         {activeTab === "service" && (
@@ -258,6 +272,13 @@ function MainApp() {
           isHighlight={true}
           onClick={() => setActiveTab("events")}
           testId="nav-events"
+        />
+        <NavItem
+          icon={<MessageSquare size={22} />}
+          label="Coach"
+          isActive={activeTab === "coach"}
+          onClick={() => setActiveTab("coach")}
+          testId="nav-coach"
         />
         <NavItem
           icon={<Activity size={22} />}
@@ -313,7 +334,7 @@ function NavItem({
     <button
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center justify-center w-14 transition-all duration-300 relative",
+        "flex-1 min-w-0 flex flex-col items-center justify-center transition-all duration-300 relative",
         isActive && !isHighlight
           ? "text-brand-primary font-medium drop-shadow-[0_0_8px_rgba(65,209,255,0.8)]"
           : "text-brand-muted",
