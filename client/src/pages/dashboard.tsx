@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Session, Metric, GoalEvent } from "@shared/schema";
 import {
   weekStats,
@@ -14,9 +15,12 @@ import {
   Minus,
   Zap,
   Activity as ActivityIcon,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StravaPanel } from "@/components/strava-panel";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const DAILY_QUOTES = [
   { text: "The pain you feel today will be the strength you feel tomorrow.", author: "Arnold Schwarzenegger" },
@@ -60,6 +64,130 @@ function getDailyQuote() {
   return DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length];
 }
 
+type ZoneLabel = "Z1" | "Z2" | "Z3" | "Z4" | "Z5";
+type SkillKey = "cornering" | "braking" | "descending";
+
+interface SkillProgressEntry {
+  weekKey: string;
+  cornering: number;
+  braking: number;
+  descending: number;
+}
+
+interface ZoneProgress {
+  zone: ZoneLabel;
+  score: number;
+  sessions: number;
+}
+
+const ZONE_LABELS: ZoneLabel[] = ["Z1", "Z2", "Z3", "Z4", "Z5"];
+
+function getCurrentWeekKey(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString().slice(0, 10);
+}
+
+function parseSkillLog(rawValue: string | null | undefined): SkillProgressEntry[] {
+  if (!rawValue) return [];
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.weekKey === "string")
+      .map((item) => ({
+        weekKey: item.weekKey,
+        cornering: Number(item.cornering) || 1,
+        braking: Number(item.braking) || 1,
+        descending: Number(item.descending) || 1,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function clampSkill(value: number): number {
+  return Math.max(1, Math.min(5, Math.round(value)));
+}
+
+function extractZones(session: Session): ZoneLabel[] {
+  const combined = `${session.zone || ""} ${session.description || ""}`.toUpperCase();
+  const matches = combined.match(/Z[1-5]/g) || [];
+  const unique = Array.from(new Set(matches));
+  return unique.filter((zone): zone is ZoneLabel => ZONE_LABELS.includes(zone as ZoneLabel));
+}
+
+function getRecentTimestamp(session: Session): number | null {
+  if (session.completedAt) {
+    const parsed = new Date(session.completedAt);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  if (session.scheduledDate) {
+    const parsed = new Date(session.scheduledDate);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  return null;
+}
+
+function calculateZoneProgression(sessions: Session[]): ZoneProgress[] {
+  const cutoff = Date.now() - 28 * 24 * 60 * 60 * 1000;
+  const buckets = Object.fromEntries(
+    ZONE_LABELS.map((zone) => [zone, { sessions: 0, minutes: 0, rpes: [] as number[] }]),
+  ) as Record<ZoneLabel, { sessions: number; minutes: number; rpes: number[] }>;
+
+  for (const session of sessions) {
+    if (!session.completed) continue;
+    if (!(session.type === "Ride" || session.type === "Long Ride")) continue;
+    const stamp = getRecentTimestamp(session);
+    if (!stamp || stamp < cutoff) continue;
+
+    const zones = extractZones(session);
+    if (zones.length === 0) continue;
+
+    for (const zone of zones) {
+      buckets[zone].sessions += 1;
+      buckets[zone].minutes += session.minutes || 0;
+      if (typeof session.rpe === "number") {
+        buckets[zone].rpes.push(session.rpe);
+      }
+    }
+  }
+
+  return ZONE_LABELS.map((zone) => {
+    const bucket = buckets[zone];
+    const base = Math.min(85, bucket.sessions * 10 + bucket.minutes / 20);
+    const avgRpe = bucket.rpes.length
+      ? bucket.rpes.reduce((sum, rpe) => sum + rpe, 0) / bucket.rpes.length
+      : null;
+
+    let adjustment = 0;
+    if (avgRpe !== null) {
+      if (avgRpe >= 8) adjustment = -8;
+      else if (avgRpe >= 4 && avgRpe <= 7) adjustment = 10;
+      else adjustment = 5;
+    }
+
+    return {
+      zone,
+      sessions: bucket.sessions,
+      score: Math.max(0, Math.min(100, Math.round(base + adjustment))),
+    };
+  });
+}
+
+function trendForSkill(entries: SkillProgressEntry[], key: SkillKey): "up" | "down" | "flat" {
+  if (entries.length < 2) return "flat";
+  const prev = entries[entries.length - 2][key];
+  const current = entries[entries.length - 1][key];
+  if (current > prev) return "up";
+  if (current < prev) return "down";
+  return "flat";
+}
+
 interface Props {
   sessions: Session[];
   metrics: Metric[];
@@ -67,6 +195,7 @@ interface Props {
   activeWeek: number;
   maxWeek: number;
   onWeekChange: (week: number) => void;
+  onOpenOnboarding: () => void;
 }
 
 export function Dashboard({
@@ -76,6 +205,7 @@ export function Dashboard({
   activeWeek,
   maxWeek,
   onWeekChange,
+  onOpenOnboarding,
 }: Props) {
   const currentWeekStats = weekStats(sessions, activeWeek);
   const targetHours = currentWeekStats.targetMinutes / 60;
@@ -89,6 +219,29 @@ export function Dashboard({
   const [showReadinessInfo, setShowReadinessInfo] = useState(false);
 
   const currentWeight = latestMetric(metrics, "weightKg");
+  const { toast } = useToast();
+
+  const { data: skillLogSetting } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "skillsProgressLog"],
+  });
+  const skillEntries = useMemo(() => parseSkillLog(skillLogSetting?.value), [skillLogSetting?.value]);
+  const latestSkillEntry = skillEntries.length > 0 ? skillEntries[skillEntries.length - 1] : null;
+  const [skillDraft, setSkillDraft] = useState({
+    cornering: latestSkillEntry?.cornering ?? 3,
+    braking: latestSkillEntry?.braking ?? 3,
+    descending: latestSkillEntry?.descending ?? 3,
+  });
+  const [isSavingSkills, setIsSavingSkills] = useState(false);
+  const zoneProgress = useMemo(() => calculateZoneProgression(sessions), [sessions]);
+
+  useEffect(() => {
+    if (!latestSkillEntry) return;
+    setSkillDraft({
+      cornering: latestSkillEntry.cornering,
+      braking: latestSkillEntry.braking,
+      descending: latestSkillEntry.descending,
+    });
+  }, [latestSkillEntry?.weekKey]);
 
   let weightDelta: number | null = null;
   const weightEntries = metrics
@@ -103,13 +256,55 @@ export function Dashboard({
   const latestFatigue = latestMetric(metrics, "fatigue");
   const dailyQuote = useMemo(() => getDailyQuote(), []);
 
+  const handleSaveSkills = async () => {
+    setIsSavingSkills(true);
+    try {
+      const weekKey = getCurrentWeekKey();
+      const nextEntry: SkillProgressEntry = {
+        weekKey,
+        cornering: clampSkill(skillDraft.cornering),
+        braking: clampSkill(skillDraft.braking),
+        descending: clampSkill(skillDraft.descending),
+      };
+
+      const current = [...skillEntries];
+      const existingIndex = current.findIndex((entry) => entry.weekKey === weekKey);
+      if (existingIndex >= 0) {
+        current[existingIndex] = nextEntry;
+      } else {
+        current.push(nextEntry);
+      }
+
+      const trimmed = current.sort((a, b) => a.weekKey.localeCompare(b.weekKey)).slice(-52);
+      await apiRequest("PUT", "/api/settings/skillsProgressLog", {
+        value: JSON.stringify(trimmed),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/settings", "skillsProgressLog"] });
+      toast({ title: "Skills confidence saved" });
+    } catch {
+      toast({ title: "Failed to save skills confidence", variant: "destructive" });
+    } finally {
+      setIsSavingSkills(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-6" data-testid="dashboard-view">
       <div className="flex justify-between items-center relative z-10">
         <h2 className="text-2xl font-bold text-brand-text" data-testid="text-dashboard-title">
           Dashboard
         </h2>
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenOnboarding}
+            className="glass-panel px-2.5 py-2 text-[10px] uppercase tracking-widest font-bold text-brand-primary flex items-center gap-1.5 hover:opacity-90"
+            data-testid="button-open-rider-guide"
+          >
+            <HelpCircle size={12} />
+            Guide
+          </button>
+          <div className="relative">
           <select
             value={activeWeek}
             onChange={(e) => onWeekChange(parseInt(e.target.value, 10))}
@@ -130,6 +325,7 @@ export function Dashboard({
             className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-primary pointer-events-none"
             size={16}
           />
+          </div>
         </div>
       </div>
 
@@ -292,6 +488,80 @@ export function Dashboard({
           </div>
         </div>
 
+        <div className="glass-panel p-5 col-span-2 space-y-3 border-brand-border/60">
+          <div className="flex items-center justify-between">
+            <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold">
+              Zone Progression (Last 4 Weeks)
+            </h3>
+            <span className="text-[10px] text-brand-muted uppercase tracking-widest">
+              Beginner-friendly score
+            </span>
+          </div>
+          <p className="text-[11px] text-brand-muted leading-relaxed">
+            Higher scores mean you are consistently completing rides in that zone at manageable effort.
+          </p>
+          <div className="space-y-2">
+            {zoneProgress.map((item) => (
+              <div key={item.zone}>
+                <div className="flex justify-between text-[10px] uppercase font-bold text-brand-muted mb-1">
+                  <span>
+                    {item.zone} ({item.sessions} sessions)
+                  </span>
+                  <span className="text-brand-text">{item.score}</span>
+                </div>
+                <div className="w-full bg-brand-bg/50 rounded-full h-1.5 overflow-hidden border border-brand-border/40">
+                  <div
+                    className="h-1.5 rounded-full bg-gradient-primary"
+                    style={{ width: `${item.score}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass-panel p-5 col-span-2 space-y-3 border-brand-border/60">
+          <div className="flex items-center justify-between">
+            <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold">
+              Skills Confidence Track
+            </h3>
+            <span className="text-[10px] text-brand-muted uppercase tracking-widest">
+              1 = not confident, 5 = very confident
+            </span>
+          </div>
+          <p className="text-[11px] text-brand-muted leading-relaxed">
+            Quick weekly check-in for off-road skills. This helps keep your plan realistic for your first event.
+          </p>
+
+          <SkillInputRow
+            label="Cornering"
+            value={skillDraft.cornering}
+            trend={trendForSkill(skillEntries, "cornering")}
+            onChange={(value) => setSkillDraft((prev) => ({ ...prev, cornering: value }))}
+          />
+          <SkillInputRow
+            label="Braking"
+            value={skillDraft.braking}
+            trend={trendForSkill(skillEntries, "braking")}
+            onChange={(value) => setSkillDraft((prev) => ({ ...prev, braking: value }))}
+          />
+          <SkillInputRow
+            label="Descending"
+            value={skillDraft.descending}
+            trend={trendForSkill(skillEntries, "descending")}
+            onChange={(value) => setSkillDraft((prev) => ({ ...prev, descending: value }))}
+          />
+
+          <button
+            onClick={handleSaveSkills}
+            disabled={isSavingSkills}
+            className="w-full mt-1 py-2 rounded-lg bg-gradient-secondary text-brand-bg text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+            data-testid="button-save-skills-progress"
+          >
+            {isSavingSkills ? "Saving..." : "Save Skills Check-In"}
+          </button>
+        </div>
+
         <div className="glass-panel p-4 flex flex-col justify-between">
           <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold">
             Total Sessions
@@ -383,6 +653,41 @@ export function Dashboard({
       </div>
 
       <StravaPanel />
+    </div>
+  );
+}
+
+function SkillInputRow({
+  label,
+  value,
+  trend,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  trend: "up" | "down" | "flat";
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] uppercase tracking-widest font-bold text-brand-muted">{label}</span>
+        <div className="flex items-center gap-1 text-[10px] font-bold text-brand-muted">
+          {trend === "up" ? <TrendingUp size={12} className="text-brand-success" /> : null}
+          {trend === "down" ? <TrendingDown size={12} className="text-brand-danger" /> : null}
+          {trend === "flat" ? <Minus size={12} /> : null}
+          <span>{value}/5</span>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={5}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[var(--color-brand-primary)]"
+      />
     </div>
   );
 }

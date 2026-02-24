@@ -29,6 +29,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { OfflineIndicator } from "@/components/offline-indicator";
 import { NotificationsCenter } from "@/components/notifications-center";
 import { SettingsModal } from "@/components/settings-modal";
+import { NewRiderOnboarding } from "@/components/new-rider-onboarding";
+import { useToast } from "@/hooks/use-toast";
 import {
   applyTheme,
   isThemeAccent,
@@ -46,8 +48,12 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [activeWeek, setActiveWeek] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [onboardingInitialized, setOnboardingInitialized] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readStoredTheme().mode);
   const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readStoredTheme().accent);
+  const { toast } = useToast();
 
   const { data: savedWeek } = useQuery<{ value: string | null }>({
     queryKey: ["/api/settings", "activeWeek"],
@@ -59,6 +65,10 @@ function MainApp() {
   });
   const { data: savedThemeAccent } = useQuery<{ value: string | null }>({
     queryKey: ["/api/settings", "themeAccent"],
+    enabled: isAuthenticated,
+  });
+  const { data: onboardingSeenSetting } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "onboardingSeenV1"],
     enabled: isAuthenticated,
   });
 
@@ -85,6 +95,22 @@ function MainApp() {
     applyTheme(themeMode, themeAccent);
     persistThemeLocally(themeMode, themeAccent);
   }, [themeMode, themeAccent]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setOnboardingOpen(false);
+      setOnboardingInitialized(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || onboardingInitialized) return;
+    if (onboardingSeenSetting === undefined) return;
+
+    const seen = onboardingSeenSetting?.value === "true";
+    if (!seen) setOnboardingOpen(true);
+    setOnboardingInitialized(true);
+  }, [isAuthenticated, onboardingInitialized, onboardingSeenSetting]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery<Session[]>({
     queryKey: ["/api/sessions"],
@@ -133,6 +159,26 @@ function MainApp() {
     try {
       await apiRequest("PUT", "/api/settings/themeAccent", { value: accent });
     } catch { }
+  };
+
+  const handleCompleteOnboarding = async () => {
+    setOnboardingSaving(true);
+    try {
+      await apiRequest("PUT", "/api/settings/onboardingSeenV1", {
+        value: "true",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/settings", "onboardingSeenV1"],
+      });
+      setOnboardingOpen(false);
+    } catch {
+      toast({
+        title: "Failed to save onboarding status",
+        variant: "destructive",
+      });
+    } finally {
+      setOnboardingSaving(false);
+    }
   };
 
   if (authLoading) {
@@ -235,6 +281,7 @@ function MainApp() {
             activeWeek={activeWeek}
             maxWeek={maxWeek}
             onWeekChange={handleWeekChange}
+            onOpenOnboarding={() => setOnboardingOpen(true)}
           />
         )}
         {activeTab === "plan" && (
@@ -316,6 +363,12 @@ function MainApp() {
         accent={themeAccent}
         onModeChange={handleThemeModeChange}
         onAccentChange={handleThemeAccentChange}
+      />
+      <NewRiderOnboarding
+        open={onboardingOpen}
+        saving={onboardingSaving}
+        onOpenChange={setOnboardingOpen}
+        onComplete={handleCompleteOnboarding}
       />
     </div>
   );
