@@ -78,6 +78,55 @@ const loadDefaultPlanSchema = z.object({
   presetId: z.string().trim().min(1).optional(),
 });
 
+type BikeType = "mtb" | "gravel" | "road" | "other";
+
+interface BikeProfileSetting {
+  bikeName: string;
+  make: string;
+  model: string;
+  bikeType: BikeType;
+  carryOverKm: number;
+}
+
+interface BikeMaintenanceState {
+  ruleProgressKm: Record<string, number>;
+  lastGeneratedAt: string | null;
+}
+
+interface MaintenanceRule {
+  id: string;
+  task: string;
+  intervalKm: number;
+  details: string;
+}
+
+const MAINTENANCE_RULES: MaintenanceRule[] = [
+  {
+    id: "chain-lube",
+    task: "Clean and lube chain",
+    intervalKm: 100,
+    details: "Wipe drivetrain, inspect chain wear, then lube for smooth shifting.",
+  },
+  {
+    id: "brake-check",
+    task: "Brake pad and rotor check",
+    intervalKm: 150,
+    details: "Inspect pad thickness, rotor rub, and lever feel before the next ride.",
+  },
+  {
+    id: "bolt-check",
+    task: "Critical bolt torque check",
+    intervalKm: 200,
+    details: "Check stem, bar, crank, and axle bolts to manufacturer torque specs.",
+  },
+  {
+    id: "suspension-clean",
+    task: "Fork/shock stanchion clean",
+    intervalKm: 200,
+    details: "Clean stanchions and seals to protect suspension performance.",
+  },
+];
+
 const coachHistoryItemSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1).max(4000),
@@ -240,6 +289,76 @@ export async function registerRoutes(
       res.json(item);
     } catch (err) {
       res.status(500).json({ error: "Failed to update service item" });
+    }
+  });
+
+  app.post("/api/service-items/auto-checks", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [activities, bikeProfileRaw, stateRaw] = await Promise.all([
+        storage.getStravaActivities(userId),
+        storage.getSetting(userId, "bikeProfileV1"),
+        storage.getSetting(userId, "bikeMaintenanceStateV1"),
+      ]);
+
+      const profile = parseBikeProfileSetting(bikeProfileRaw);
+      const state = parseBikeMaintenanceState(stateRaw);
+
+      const stravaRideKm = roundToOne(
+        activities
+          .filter(isRideActivity)
+          .reduce((sum, activity) => sum + (activity.distance || 0), 0) / 1000,
+      );
+
+      const totalRideKm = roundToOne(stravaRideKm + profile.carryOverKm);
+      const generatedItemIds: string[] = [];
+
+      for (const rule of MAINTENANCE_RULES) {
+        const completedIntervals = Math.floor(totalRideKm / rule.intervalKm);
+        if (completedIntervals <= 0) continue;
+
+        const dueKm = completedIntervals * rule.intervalKm;
+        const alreadyGeneratedKm = Math.max(0, state.ruleProgressKm[rule.id] || 0);
+        if (dueKm <= alreadyGeneratedKm) continue;
+
+        const nextDueKm = dueKm + rule.intervalKm;
+        const itemId = `svc-auto-${rule.id}-${dueKm}`;
+
+        await storage.upsertServiceItem(userId, {
+          id: itemId,
+          item: `${rule.task} (${dueKm} km milestone)`,
+          status: "Planned",
+          date: null,
+          dueDate: null,
+          shop: null,
+          cost: null,
+          notes: `${rule.details} Auto-generated from tracked distance (${totalRideKm.toFixed(1)} km). Next reminder at ${nextDueKm} km.`,
+        });
+
+        state.ruleProgressKm[rule.id] = dueKm;
+        generatedItemIds.push(itemId);
+      }
+
+      state.lastGeneratedAt = new Date().toISOString();
+      await storage.setSetting(
+        userId,
+        "bikeMaintenanceStateV1",
+        JSON.stringify(state),
+      );
+
+      res.json({
+        ok: true,
+        generatedCount: generatedItemIds.length,
+        generatedItemIds,
+        stravaRideKm,
+        carryOverKm: profile.carryOverKm,
+        totalRideKm,
+        hasStravaData: activities.length > 0,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to generate auto maintenance checks" });
     }
   });
 
@@ -943,6 +1062,87 @@ function getDefaultTargetDate(weeksAhead = 12): string {
   const d = new Date();
   d.setDate(d.getDate() + weeksAhead * 7);
   return d.toISOString().split("T")[0];
+}
+
+function parseBikeProfileSetting(raw: string | null): BikeProfileSetting {
+  const fallback: BikeProfileSetting = {
+    bikeName: "",
+    make: "",
+    model: "",
+    bikeType: "mtb",
+    carryOverKm: 0,
+  };
+
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<BikeProfileSetting>;
+    const bikeType = parsed.bikeType;
+    return {
+      bikeName: typeof parsed.bikeName === "string" ? parsed.bikeName.trim() : "",
+      make: typeof parsed.make === "string" ? parsed.make.trim() : "",
+      model: typeof parsed.model === "string" ? parsed.model.trim() : "",
+      bikeType:
+        bikeType === "mtb" || bikeType === "gravel" || bikeType === "road" || bikeType === "other"
+          ? bikeType
+          : "mtb",
+      carryOverKm: normalizeDistanceValue(parsed.carryOverKm),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function parseBikeMaintenanceState(raw: string | null): BikeMaintenanceState {
+  if (!raw) {
+    return { ruleProgressKm: {}, lastGeneratedAt: null };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<BikeMaintenanceState>;
+    const ruleProgressKm = parsed.ruleProgressKm && typeof parsed.ruleProgressKm === "object"
+      ? Object.fromEntries(
+          Object.entries(parsed.ruleProgressKm).map(([key, value]) => [
+            key,
+            normalizeDistanceValue(value),
+          ]),
+        )
+      : {};
+
+    return {
+      ruleProgressKm,
+      lastGeneratedAt:
+        typeof parsed.lastGeneratedAt === "string" ? parsed.lastGeneratedAt : null,
+    };
+  } catch {
+    return { ruleProgressKm: {}, lastGeneratedAt: null };
+  }
+}
+
+function normalizeDistanceValue(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0;
+  }
+  return Math.round(numeric * 10) / 10;
+}
+
+function roundToOne(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function isRideActivity(activity: StravaActivity): boolean {
+  const type = (activity.type || "").toLowerCase();
+  const sportType = (activity.sportType || "").toLowerCase();
+  const candidates = [type, sportType];
+
+  return candidates.some((item) =>
+    item === "ride" ||
+    item === "virtualride" ||
+    item === "mountainbikeride" ||
+    item === "gravelride" ||
+    item === "ebikeride",
+  );
 }
 
 type CoachHistoryItem = z.infer<typeof coachHistoryItemSchema>;
