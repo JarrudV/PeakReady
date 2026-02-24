@@ -184,8 +184,13 @@ function MainApp() {
       <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-between">
         <OfflineIndicator />
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
-            <MountainSnow size={18} className="text-brand-bg" />
+          <div className="w-8 h-8 rounded-lg overflow-hidden border border-brand-border/60 bg-brand-panel-2">
+            <img
+              src="/favicon.png"
+              alt="PeakReady logo"
+              className="w-full h-full object-cover"
+              data-testid="img-app-logo"
+            />
           </div>
           <h1 className="text-xl font-bold tracking-tight" data-testid="text-app-title">
             Peak<span className="text-gradient-primary">Ready</span>
