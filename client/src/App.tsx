@@ -250,57 +250,58 @@ function MainApp() {
         )}
       </main>
 
-      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 px-2 py-3 flex justify-between items-center z-30 pb-safe shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
-        <NavItem
-          icon={<Home size={22} />}
-          label="Dash"
-          isActive={activeTab === "dashboard"}
-          onClick={() => setActiveTab("dashboard")}
-          testId="nav-dashboard"
-        />
-        <NavItem
-          icon={<CalendarDays size={22} />}
-          label="Plan"
-          isActive={activeTab === "plan"}
-          onClick={() => setActiveTab("plan")}
-          testId="nav-plan"
-        />
-        <NavItem
-          icon={<MountainSnow size={24} />}
-          label="Events"
-          isActive={activeTab === "events"}
-          isHighlight={true}
-          onClick={() => setActiveTab("events")}
-          testId="nav-events"
-        />
-        <NavItem
-          icon={<MessageSquare size={22} />}
-          label="Coach"
-          isActive={activeTab === "coach"}
-          onClick={() => setActiveTab("coach")}
-          testId="nav-coach"
-        />
-        <NavItem
-          icon={<Activity size={22} />}
-          label="Metrics"
-          isActive={activeTab === "metrics"}
-          onClick={() => setActiveTab("metrics")}
-          testId="nav-metrics"
-        />
-        <NavItem
-          icon={<Wrench size={22} />}
-          label="Bike"
-          isActive={activeTab === "service"}
-          onClick={() => setActiveTab("service")}
-          testId="nav-service"
-        />
-        <NavItem
-          icon={<Bike size={22} className="text-[#FC4C02]" />}
-          label="Strava"
-          isActive={activeTab === "strava"}
-          onClick={() => setActiveTab("strava")}
-          testId="nav-strava"
-        />
+      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 z-30 px-3 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
+        <div className="mx-auto grid w-full max-w-lg grid-cols-[1fr_1fr_1fr_auto_1fr_1fr_1fr] items-end gap-x-1">
+          <NavItem
+            icon={<MountainSnow size={23} />}
+            label="Events"
+            isActive={activeTab === "events"}
+            onClick={() => setActiveTab("events")}
+            testId="nav-events"
+          />
+          <NavItem
+            icon={<CalendarDays size={23} />}
+            label="Plan"
+            isActive={activeTab === "plan"}
+            onClick={() => setActiveTab("plan")}
+            testId="nav-plan"
+          />
+          <NavItem
+            icon={<MessageSquare size={23} />}
+            label="Coach"
+            isActive={activeTab === "coach"}
+            onClick={() => setActiveTab("coach")}
+            testId="nav-coach"
+          />
+          <DashNavItem
+            icon={<Home size={26} />}
+            label="Dash"
+            isActive={activeTab === "dashboard"}
+            onClick={() => setActiveTab("dashboard")}
+            testId="nav-dashboard"
+          />
+          <NavItem
+            icon={<Activity size={23} />}
+            label="Metrics"
+            isActive={activeTab === "metrics"}
+            onClick={() => setActiveTab("metrics")}
+            testId="nav-metrics"
+          />
+          <NavItem
+            icon={<Wrench size={23} />}
+            label="Bike"
+            isActive={activeTab === "service"}
+            onClick={() => setActiveTab("service")}
+            testId="nav-service"
+          />
+          <NavItem
+            icon={<Bike size={23} className={cn(activeTab === "strava" ? "text-[#FC4C02]" : "text-brand-muted")} />}
+            label="Strava"
+            isActive={activeTab === "strava"}
+            onClick={() => setActiveTab("strava")}
+            testId="nav-strava"
+          />
+        </div>
       </nav>
 
       <SettingsModal
@@ -319,14 +320,12 @@ function NavItem({
   icon,
   label,
   isActive,
-  isHighlight,
   onClick,
   testId,
 }: {
   icon: React.ReactNode;
   label: string;
   isActive: boolean;
-  isHighlight?: boolean;
   onClick: () => void;
   testId: string;
 }) {
@@ -334,39 +333,50 @@ function NavItem({
     <button
       onClick={onClick}
       className={cn(
-        "flex-1 min-w-0 flex flex-col items-center justify-center transition-all duration-300 relative",
-        isActive && !isHighlight
-          ? "text-brand-primary font-medium drop-shadow-[0_0_8px_rgba(65,209,255,0.8)]"
-          : "text-brand-muted",
-        isHighlight && "text-brand-text"
+        "min-h-[48px] w-full rounded-xl px-1 py-1.5 transition-colors duration-200 flex flex-col items-center justify-end gap-0.5",
+        isActive ? "text-brand-primary" : "text-brand-muted hover:text-brand-text"
       )}
       data-testid={testId}
     >
-      {isHighlight && (
-        <div className="absolute inset-0 bg-gradient-primary blur-lg opacity-20 -z-10 rounded-full scale-150" />
-      )}
-      <div
-        className={cn(
-          "mb-1 flex items-center justify-center",
-          isActive && !isHighlight && "scale-110",
-          isHighlight &&
-          "p-3 rounded-full bg-gradient-primary shadow-[0_0_15px_rgba(189,52,254,0.5)] -mt-6 ring-4 ring-brand-bg",
-          isActive &&
-          isHighlight &&
-          "scale-110 shadow-[0_0_25px_rgba(65,209,255,0.8)] ring-brand-panel"
-        )}
-      >
+      <div className={cn("h-6 w-6 flex items-center justify-center", isActive && "drop-shadow-[0_0_8px_rgba(65,209,255,0.45)]")}>
         {icon}
       </div>
-      <span
-        className={cn(
-          "text-[10px] uppercase tracking-wider",
-          isHighlight && "mt-1"
-        )}
-      >
+      <span className="text-[10px] uppercase tracking-wider leading-none">
         {label}
       </span>
     </button>
+  );
+}
+
+function DashNavItem({
+  icon,
+  label,
+  isActive,
+  onClick,
+  testId,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-end">
+      <button
+        onClick={onClick}
+        className={cn(
+          "h-[62px] w-[62px] -mt-6 rounded-full border-4 ring-2 ring-black/20 border-brand-bg bg-[#22c55e] text-white shadow-[0_10px_24px_rgba(0,0,0,0.45)] flex items-center justify-center transition-transform duration-200",
+          isActive ? "scale-105" : "hover:scale-[1.03]"
+        )}
+        data-testid={testId}
+      >
+        {icon}
+      </button>
+      <span className={cn("mt-1 text-[10px] uppercase tracking-wider leading-none", isActive ? "text-brand-primary" : "text-brand-muted")}>
+        {label}
+      </span>
+    </div>
   );
 }
 
