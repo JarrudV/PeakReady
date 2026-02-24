@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Clock, Mountain, ArrowRight, CheckCircle2, Share2 } from "lucide-react";
 import type { Session, StravaActivity } from "@shared/schema";
@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { generateWorkoutShareCard } from "@/lib/share-card";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { resolveNonRideWorkoutDetails } from "@/lib/workout-details";
 
 interface Props {
   session: Session;
@@ -31,12 +33,23 @@ function getBestMatchingActivity(session: Session, activities: StravaActivity[])
 export function WorkoutDetailModal({ session, onClose }: Props) {
   const { toast } = useToast();
   const [isSharing, setIsSharing] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(session.notes ?? "");
+  const [savedNotes, setSavedNotes] = useState(session.notes ?? "");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
   const { data: stravaActivities = [] } = useQuery<StravaActivity[]>({
     queryKey: ["/api/strava/activities"],
     enabled: session.completed,
   });
 
   const matchedActivity = getBestMatchingActivity(session, stravaActivities);
+  const nonRideDetails = useMemo(() => resolveNonRideWorkoutDetails(session), [session]);
+  const hasUnsavedNotes = notesDraft.trim() !== savedNotes.trim();
+
+  useEffect(() => {
+    const nextNotes = session.notes ?? "";
+    setNotesDraft(nextNotes);
+    setSavedNotes(nextNotes);
+  }, [session.id, session.notes]);
 
   const handleShare = async () => {
     try {
@@ -72,6 +85,23 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
       toast({ title: "Failed to share workout card", variant: "destructive" });
     } finally {
       setIsSharing(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    setIsSavingNotes(true);
+    const normalizedNotes = notesDraft.trim();
+    try {
+      await apiRequest("PATCH", `/api/sessions/${session.id}`, {
+        notes: normalizedNotes.length > 0 ? normalizedNotes : null,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      setSavedNotes(normalizedNotes);
+      toast({ title: "Session notes saved" });
+    } catch {
+      toast({ title: "Failed to save notes", variant: "destructive" });
+    } finally {
+      setIsSavingNotes(false);
     }
   };
 
@@ -168,7 +198,39 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
           className="flex-1 overflow-y-auto p-5 workout-markdown"
           data-testid="text-workout-details"
         >
-          {session.detailsMarkdown ? (
+          {nonRideDetails ? (
+            <div className="space-y-5">
+              <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
+                <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">
+                  Purpose
+                </h3>
+                <p className="text-sm text-brand-muted leading-relaxed">{nonRideDetails.purpose}</p>
+              </div>
+
+              <StructuredSection title="Warm-up" items={nonRideDetails.warmUp} />
+              <StructuredSection title="Main set" items={nonRideDetails.mainSet} />
+              <StructuredSection title="Cool-down" items={nonRideDetails.coolDown} />
+
+              {nonRideDetails.equipment && nonRideDetails.equipment.length > 0 && (
+                <StructuredSection title="Equipment" items={nonRideDetails.equipment} />
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-brand-border/60 bg-brand-bg/40 p-3">
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-1">Time estimate</p>
+                  <p className="text-sm font-semibold text-brand-text">{nonRideDetails.timeEstimate}</p>
+                </div>
+                <div className="rounded-lg border border-brand-border/60 bg-brand-bg/40 p-3">
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-1">RPE guidance</p>
+                  <p className="text-sm font-semibold text-brand-text">{nonRideDetails.rpeGuidance}</p>
+                </div>
+              </div>
+
+              {nonRideDetails.fallbackMessage && (
+                <p className="text-xs text-brand-secondary">{nonRideDetails.fallbackMessage}</p>
+              )}
+            </div>
+          ) : session.detailsMarkdown ? (
             <ReactMarkdown
               components={{
                 h2: ({ children }) => (
@@ -216,24 +278,56 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
           )}
         </div>
 
-        {(session.rpe || session.notes) && (
-          <div className="border-t border-brand-border p-4 bg-brand-bg/50">
-            {session.rpe && (
-              <div className="flex items-center text-sm mb-1">
-                <span className="text-brand-muted w-12">RPE:</span>
-                <span className="font-semibold text-brand-text">
-                  {session.rpe}/10
-                </span>
-              </div>
-            )}
-            {session.notes && (
-              <p className="text-sm text-brand-muted italic">
-                &ldquo;{session.notes}&rdquo;
-              </p>
-            )}
+        <div className="border-t border-brand-border p-4 bg-brand-bg/50 space-y-3">
+          {session.rpe && (
+            <div className="flex items-center text-sm">
+              <span className="text-brand-muted w-12">RPE:</span>
+              <span className="font-semibold text-brand-text">
+                {session.rpe}/10
+              </span>
+            </div>
+          )}
+
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-brand-muted font-bold block mb-1.5">
+              Your session notes
+            </label>
+            <textarea
+              value={notesDraft}
+              onChange={(event) => setNotesDraft(event.target.value)}
+              className="w-full bg-brand-bg text-brand-text border border-brand-border/60 rounded-lg px-3 py-2 text-sm min-h-[72px] resize-none focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              placeholder="Add your own cues, substitutions, or post-workout observations..."
+              data-testid="input-workout-detail-notes"
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={handleSaveNotes}
+                disabled={isSavingNotes || !hasUnsavedNotes}
+                className="px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-md bg-gradient-primary text-brand-bg disabled:opacity-50"
+                data-testid="button-save-workout-detail-notes"
+              >
+                {isSavingNotes ? "Saving..." : "Save notes"}
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function StructuredSection({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
+      <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">{title}</h3>
+      <ul className="space-y-2">
+        {items.map((item, idx) => (
+          <li key={`${title}-${idx}`} className="text-sm text-brand-muted flex items-start gap-2">
+            <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
+            <span className="flex-1">{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
