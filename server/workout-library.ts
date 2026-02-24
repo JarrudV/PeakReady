@@ -155,6 +155,32 @@ Easy Z1 spin. Stretch hamstrings at stop.
 - Don't drift into Z4 — this isn't a race
 - If you can't hold a few words, back off`,
 
+  "skills-cadence": `## MTB Skills + Cadence Session
+
+**Goal:** Improve trail handling while reinforcing smooth cadence and bike control.
+
+### Warm Up (10 mins)
+- 5 mins easy spin in Z1-Z2
+- 3 x 20 sec high-cadence spin-ups (100-110 RPM) with 40 sec easy
+- 2 mins easy, focus on relaxed upper body
+
+### Main Set (20-35 mins)
+Complete 3-4 rounds on trail, pump track, or safe open area:
+- Cornering drill: 4 controlled reps each direction
+- Braking drill: 4 progressive braking efforts, focus on front/rear balance
+- Line-choice drill: 2-3 passes through a short technical section
+- Cadence block: 3 mins steady Z2 spin at 90-100 RPM
+- Recovery: 2 mins easy between rounds
+
+### Cool Down (5-10 mins)
+- Easy spin Z1
+- Light mobility for hips, ankles, and thoracic spine
+
+### Notes
+- Keep skill reps controlled: quality over speed
+- Stay below threshold; this is technical learning, not a max effort day
+- Log one skill cue that improved today`,
+
   "sweet-spot": `## Sweet Spot Intervals
 
 **Goal:** Maximize training stimulus with manageable fatigue. The best bang for your buck.
@@ -413,6 +439,14 @@ export function getWorkoutDetails(type: string, description: string, week: numbe
   if (descLower.includes("vo2max") || descLower.includes("vo2")) return workoutLibrary["vo2max"];
   if (descLower.includes("race simulation")) return workoutLibrary["race-simulation"];
   if (descLower.includes("race rehearsal")) return workoutLibrary["race-rehearsal"];
+  if (
+    descLower.includes("skill") ||
+    descLower.includes("handling") ||
+    descLower.includes("technique") ||
+    descLower.includes("cadence")
+  ) {
+    return workoutLibrary["skills-cadence"];
+  }
   if (descLower.includes("sweet spot")) return workoutLibrary["sweet-spot"];
   if (descLower.includes("threshold") && descLower.includes("climb")) return workoutLibrary["threshold-climbs"];
   if (descLower.includes("tempo")) return workoutLibrary["tempo-ride"];

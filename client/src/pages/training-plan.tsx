@@ -28,6 +28,7 @@ interface Props {
 }
 
 type SessionPatch = Partial<Pick<Session, "type" | "description" | "zone" | "strength" | "minutes" | "notes">>;
+type WorkoutDifficulty = "easy" | "moderate" | "hard";
 
 interface AdaptiveSuggestion {
   id: string;
@@ -39,6 +40,8 @@ interface AdaptiveSuggestion {
   patch: SessionPatch;
   note: string;
 }
+
+type AlternateKind = "easier" | "shorter" | "harder";
 
 const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const INTENSITY_KEYWORDS = ["tempo", "threshold", "vo2", "interval", "race simulation", "sweet spot", "climbing tempo"];
@@ -77,6 +80,54 @@ function isIntensitySession(session: Session): boolean {
   return INTENSITY_KEYWORDS.some((keyword) => description.includes(keyword));
 }
 
+function getAlternatePatch(session: Session, kind: AlternateKind): { patch: SessionPatch; note: string; toastLabel: string } {
+  if (kind === "easier") {
+    return {
+      patch: {
+        type: "Ride",
+        description: "Easy Endurance Ride (Alternate)",
+        strength: false,
+        minutes: adjustMinutesBounded(session.minutes, -0.15),
+        zone: "Z1-Z2",
+      },
+      note: "Alternate applied: made easier for recovery and consistency.",
+      toastLabel: "Easier alternate applied",
+    };
+  }
+
+  if (kind === "shorter") {
+    return {
+      patch: {
+        minutes: adjustMinutesBounded(session.minutes, -0.1),
+      },
+      note: "Alternate applied: shortened duration by 10% to fit available time.",
+      toastLabel: "Shorter alternate applied",
+    };
+  }
+
+  const harderZone =
+    session.type === "Long Ride"
+      ? "Z2-Z3"
+      : session.zone?.includes("Z1")
+        ? "Z2"
+        : session.zone?.includes("Z2")
+          ? "Z2-Z3"
+          : session.zone?.includes("Z3")
+            ? "Z3-Z4"
+            : session.zone?.includes("Z4")
+              ? "Z4-Z5"
+              : "Z3-Z4";
+
+  return {
+    patch: {
+      minutes: adjustMinutesBounded(session.minutes, 0.08),
+      zone: harderZone,
+    },
+    note: "Alternate applied: increased load slightly (+8%) because readiness looks good.",
+    toastLabel: "Harder alternate applied",
+  };
+}
+
 function appendRecoveryNote(existing: string | null, note: string): string {
   if (!existing) return note;
   if (existing.includes(note)) return existing;
@@ -89,6 +140,19 @@ function getLatestFatigue(metrics: Metric[]): number | null {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   return fatigueEntries.length > 0 ? Number(fatigueEntries[fatigueEntries.length - 1].fatigue) : null;
+}
+
+function difficultyToRpe(difficulty: WorkoutDifficulty): number {
+  if (difficulty === "easy") return 3;
+  if (difficulty === "hard") return 8;
+  return 6;
+}
+
+function getDifficultyFromRpe(rpe: number | null | undefined): WorkoutDifficulty | null {
+  if (!rpe) return null;
+  if (rpe <= 4) return "easy";
+  if (rpe >= 8) return "hard";
+  return "moderate";
 }
 
 function isHardRide(activity: StravaActivity): boolean {
@@ -121,6 +185,8 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
   const [viewingSession, setViewingSession] = useState<Session | null>(null);
   const [showAIBuilder, setShowAIBuilder] = useState(false);
   const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
+  const [applyingAlternateId, setApplyingAlternateId] = useState<string | null>(null);
+  const [loggingDifficultyId, setLoggingDifficultyId] = useState<string | null>(null);
   const { data: metrics = [] } = useQuery<Metric[]>({
     queryKey: ["/api/metrics"],
   });
@@ -288,6 +354,40 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
     }
   };
 
+  const handleApplyAlternate = async (session: Session, kind: AlternateKind) => {
+    const alternateId = `${session.id}-${kind}`;
+    setApplyingAlternateId(alternateId);
+
+    const { patch, note, toastLabel } = getAlternatePatch(session, kind);
+    try {
+      await apiRequest("PATCH", `/api/sessions/${session.id}`, {
+        ...patch,
+        notes: appendRecoveryNote(session.notes, note),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      toast({ title: toastLabel });
+    } catch {
+      toast({ title: "Failed to apply alternate", variant: "destructive" });
+    } finally {
+      setApplyingAlternateId(null);
+    }
+  };
+
+  const handleLogDifficulty = async (session: Session, difficulty: WorkoutDifficulty) => {
+    setLoggingDifficultyId(session.id);
+    try {
+      await apiRequest("PATCH", `/api/sessions/${session.id}`, {
+        rpe: difficultyToRpe(difficulty),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      toast({ title: "Workout feedback saved" });
+    } catch {
+      toast({ title: "Failed to save workout feedback", variant: "destructive" });
+    } finally {
+      setLoggingDifficultyId(null);
+    }
+  };
+
   return (
     <div className="p-4 space-y-4" data-testid="training-plan-view">
       <h2 className="text-2xl font-bold mb-2 text-brand-text" data-testid="text-plan-title">
@@ -357,6 +457,10 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
             onCancel={() => setEditingId(null)}
             onToggleComplete={() => handleToggleComplete(session)}
             onViewDetails={() => setViewingSession(session)}
+            onApplyAlternate={(kind) => handleApplyAlternate(session, kind)}
+            applyingAlternateId={applyingAlternateId}
+            onLogDifficulty={(difficulty) => handleLogDifficulty(session, difficulty)}
+            loggingDifficultyId={loggingDifficultyId}
           />
         ))}
 
@@ -392,6 +496,10 @@ function SessionCard({
   onCancel,
   onToggleComplete,
   onViewDetails,
+  onApplyAlternate,
+  applyingAlternateId,
+  onLogDifficulty,
+  loggingDifficultyId,
 }: {
   session: Session;
   isEditing: boolean;
@@ -400,10 +508,15 @@ function SessionCard({
   onCancel: () => void;
   onToggleComplete: () => void;
   onViewDetails: () => void;
+  onApplyAlternate: (kind: AlternateKind) => void;
+  applyingAlternateId: string | null;
+  onLogDifficulty: (difficulty: WorkoutDifficulty) => void;
+  loggingDifficultyId: string | null;
 }) {
   const [editMinutes, setEditMinutes] = useState(session.minutes);
   const [editRpe, setEditRpe] = useState(session.rpe?.toString() || "");
   const [editNotes, setEditNotes] = useState(session.notes || "");
+  const selectedDifficulty = getDifficultyFromRpe(session.rpe);
 
   const typeColor =
     session.type === "Long Ride"
@@ -527,6 +640,89 @@ function SessionCard({
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {!isEditing && session.completed && (
+          <div className="mt-3 pt-3 border-t border-brand-border/70">
+            <p className="text-[10px] uppercase tracking-widest text-brand-muted font-bold mb-2">
+              How did this workout feel?
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onLogDifficulty("easy")}
+                disabled={loggingDifficultyId === session.id}
+                className={cn(
+                  "rounded-md border px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold disabled:opacity-50",
+                  selectedDifficulty === "easy"
+                    ? "border-brand-success bg-brand-success/15 text-brand-success"
+                    : "border-brand-border/60 bg-brand-bg/70 text-brand-muted hover:text-brand-text"
+                )}
+                data-testid={`button-difficulty-easy-${session.id}`}
+              >
+                Easy
+              </button>
+              <button
+                onClick={() => onLogDifficulty("moderate")}
+                disabled={loggingDifficultyId === session.id}
+                className={cn(
+                  "rounded-md border px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold disabled:opacity-50",
+                  selectedDifficulty === "moderate"
+                    ? "border-brand-primary bg-brand-primary/15 text-brand-primary"
+                    : "border-brand-border/60 bg-brand-bg/70 text-brand-muted hover:text-brand-text"
+                )}
+                data-testid={`button-difficulty-moderate-${session.id}`}
+              >
+                Moderate
+              </button>
+              <button
+                onClick={() => onLogDifficulty("hard")}
+                disabled={loggingDifficultyId === session.id}
+                className={cn(
+                  "rounded-md border px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold disabled:opacity-50",
+                  selectedDifficulty === "hard"
+                    ? "border-brand-warning bg-brand-warning/15 text-brand-warning"
+                    : "border-brand-border/60 bg-brand-bg/70 text-brand-muted hover:text-brand-text"
+                )}
+                data-testid={`button-difficulty-hard-${session.id}`}
+              >
+                Hard
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isEditing && !session.completed && (session.type === "Ride" || session.type === "Long Ride") && (
+          <div className="mt-3 pt-3 border-t border-brand-border/70">
+            <p className="text-[10px] uppercase tracking-widest text-brand-muted font-bold mb-2">
+              Need an alternate today?
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onApplyAlternate("easier")}
+                disabled={applyingAlternateId === `${session.id}-easier`}
+                className="rounded-md border border-brand-border/60 bg-brand-bg/70 px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold text-brand-muted hover:text-brand-text disabled:opacity-50"
+                data-testid={`button-alt-easier-${session.id}`}
+              >
+                {applyingAlternateId === `${session.id}-easier` ? "..." : "Easier"}
+              </button>
+              <button
+                onClick={() => onApplyAlternate("shorter")}
+                disabled={applyingAlternateId === `${session.id}-shorter`}
+                className="rounded-md border border-brand-border/60 bg-brand-bg/70 px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold text-brand-muted hover:text-brand-text disabled:opacity-50"
+                data-testid={`button-alt-shorter-${session.id}`}
+              >
+                {applyingAlternateId === `${session.id}-shorter` ? "..." : "Shorter"}
+              </button>
+              <button
+                onClick={() => onApplyAlternate("harder")}
+                disabled={applyingAlternateId === `${session.id}-harder`}
+                className="rounded-md border border-brand-border/60 bg-brand-bg/70 px-2 py-1.5 text-[10px] uppercase tracking-widest font-bold text-brand-muted hover:text-brand-text disabled:opacity-50"
+                data-testid={`button-alt-harder-${session.id}`}
+              >
+                {applyingAlternateId === `${session.id}-harder` ? "..." : "Harder"}
+              </button>
+            </div>
           </div>
         )}
 
