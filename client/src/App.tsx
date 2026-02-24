@@ -30,6 +30,7 @@ import { OfflineIndicator } from "@/components/offline-indicator";
 import { NotificationsCenter } from "@/components/notifications-center";
 import { SettingsModal } from "@/components/settings-modal";
 import { NewRiderOnboarding } from "@/components/new-rider-onboarding";
+import { AccountCenterModal } from "@/components/account-center-modal";
 import { useToast } from "@/hooks/use-toast";
 import {
   applyTheme,
@@ -48,9 +49,11 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [activeWeek, setActiveWeek] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [onboardingInitialized, setOnboardingInitialized] = useState(false);
+  const [planSaving, setPlanSaving] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readStoredTheme().mode);
   const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readStoredTheme().accent);
   const { toast } = useToast();
@@ -69,6 +72,14 @@ function MainApp() {
   });
   const { data: onboardingSeenSetting } = useQuery<{ value: string | null }>({
     queryKey: ["/api/settings", "onboardingSeenV1"],
+    enabled: isAuthenticated,
+  });
+  const { data: subscriptionTierSetting } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "subscriptionTier"],
+    enabled: isAuthenticated,
+  });
+  const { data: subscriptionBillingSetting } = useQuery<{ value: string | null }>({
+    queryKey: ["/api/settings", "subscriptionBillingCycle"],
     enabled: isAuthenticated,
   });
 
@@ -181,6 +192,34 @@ function MainApp() {
     }
   };
 
+  const subscriptionTier = subscriptionTierSetting?.value === "pro" ? "pro" : "free";
+  const billingCycle = subscriptionBillingSetting?.value === "annual" ? "annual" : "monthly";
+
+  const handleSelectPlan = async (tier: "free" | "pro", cycle: "monthly" | "annual") => {
+    setPlanSaving(true);
+    try {
+      await Promise.all([
+        apiRequest("PUT", "/api/settings/subscriptionTier", { value: tier }),
+        apiRequest("PUT", "/api/settings/subscriptionBillingCycle", { value: cycle }),
+      ]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/settings", "subscriptionTier"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/settings", "subscriptionBillingCycle"] }),
+      ]);
+      toast({
+        title: tier === "pro" ? "Pro preference saved" : "Free plan selected",
+        description: `Billing preference: ${cycle}.`,
+      });
+    } catch {
+      toast({
+        title: "Failed to save subscription preference",
+        variant: "destructive",
+      });
+    } finally {
+      setPlanSaving(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -253,10 +292,10 @@ function MainApp() {
             <Settings size={16} />
           </button>
           <button
-            onClick={() => logout()}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden"
-            title="Sign out"
-            data-testid="button-logout"
+            onClick={() => setAccountOpen(true)}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden border border-brand-border bg-brand-panel-2"
+            title="Account"
+            data-testid="button-open-account"
           >
             {user?.profileImageUrl ? (
               <img
@@ -369,6 +408,29 @@ function MainApp() {
         saving={onboardingSaving}
         onOpenChange={setOnboardingOpen}
         onComplete={handleCompleteOnboarding}
+      />
+      <AccountCenterModal
+        open={accountOpen}
+        onOpenChange={setAccountOpen}
+        name={[user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Rider"}
+        email={user?.email || "No email available"}
+        profileImageUrl={user?.profileImageUrl}
+        subscriptionTier={subscriptionTier}
+        billingCycle={billingCycle}
+        isSavingPlan={planSaving}
+        onSelectPlan={handleSelectPlan}
+        onOpenSettings={() => {
+          setAccountOpen(false);
+          setSettingsOpen(true);
+        }}
+        onOpenGuide={() => {
+          setAccountOpen(false);
+          setOnboardingOpen(true);
+        }}
+        onLogout={() => {
+          setAccountOpen(false);
+          logout();
+        }}
       />
     </div>
   );
