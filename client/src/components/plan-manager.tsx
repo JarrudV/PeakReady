@@ -27,6 +27,30 @@ interface PlanTemplate {
   tags: string[];
 }
 
+const LEVEL_TAGS = new Set(["beginner", "intermediate", "advanced"]);
+
+function formatTag(tag: string): string {
+  return tag
+    .split("-")
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(" ");
+}
+
+function getPresetLevel(tags: string[]): string {
+  const level = tags.find((tag) => LEVEL_TAGS.has(tag.toLowerCase()));
+  return level ? formatTag(level) : "All Levels";
+}
+
+function getPresetFocus(tags: string[]): string {
+  const focusTags = tags.filter((tag) => !LEVEL_TAGS.has(tag.toLowerCase()));
+  if (focusTags.length === 0) return "General";
+  return focusTags.map((tag) => formatTag(tag)).join(" / ");
+}
+
+function getPresetOptionLabel(preset: PlanTemplate): string {
+  return `${preset.name} (${preset.weeks} wk, ${preset.sessionsPerWeek}/wk, ${getPresetLevel(preset.tags)})`;
+}
+
 export function PlanManager({ sessionCount }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -163,6 +187,9 @@ export function PlanManager({ sessionCount }: Props) {
                     <label className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-2 block">
                       Choose Preset
                     </label>
+                    <p className="text-[11px] text-brand-muted mb-2">
+                      Pick by duration, training level, and riding focus.
+                    </p>
                     <div className="relative">
                       <select
                         value={selectedPreset.id}
@@ -175,7 +202,7 @@ export function PlanManager({ sessionCount }: Props) {
                       >
                         {presets.map((preset) => (
                           <option key={preset.id} value={preset.id}>
-                            {preset.name} - {preset.weeks} weeks - {preset.sessionsPerWeek} sessions/week
+                            {getPresetOptionLabel(preset)}
                           </option>
                         ))}
                       </select>
@@ -191,6 +218,16 @@ export function PlanManager({ sessionCount }: Props) {
                     <p className="text-xs text-brand-muted mt-1 leading-relaxed">
                       {selectedPreset.description}
                     </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div className="rounded-md border border-brand-border/60 bg-brand-panel-2 px-2.5 py-1.5">
+                        <span className="text-brand-muted uppercase tracking-wider text-[10px]">Level</span>
+                        <p className="text-brand-text font-semibold">{getPresetLevel(selectedPreset.tags)}</p>
+                      </div>
+                      <div className="rounded-md border border-brand-border/60 bg-brand-panel-2 px-2.5 py-1.5">
+                        <span className="text-brand-muted uppercase tracking-wider text-[10px]">Focus</span>
+                        <p className="text-brand-text font-semibold">{getPresetFocus(selectedPreset.tags)}</p>
+                      </div>
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <span className="rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-brand-primary">
                         {selectedPreset.weeks} weeks
@@ -203,7 +240,7 @@ export function PlanManager({ sessionCount }: Props) {
                           key={`${selectedPreset.id}-${tag}`}
                           className="rounded-full border border-brand-border bg-brand-panel-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-brand-muted"
                         >
-                          {tag}
+                          {formatTag(tag)}
                         </span>
                       ))}
                     </div>

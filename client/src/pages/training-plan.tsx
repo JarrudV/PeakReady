@@ -41,6 +41,7 @@ interface AdaptiveSuggestion {
 }
 
 const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const INTENSITY_KEYWORDS = ["tempo", "threshold", "vo2", "interval", "race simulation", "sweet spot", "climbing tempo"];
 
 function dayOrder(day: string): number {
   const idx = WEEKDAY_ORDER.indexOf(day.slice(0, 3).toLowerCase());
@@ -55,8 +56,25 @@ function addDaysIso(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function adjustMinutes(minutes: number, factor: number): number {
-  return Math.max(20, Math.round(minutes * (1 + factor)));
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function adjustMinutesBounded(minutes: number, deltaFraction: number): number {
+  const boundedFraction = clamp(deltaFraction, -0.2, 0.2);
+  const adjusted = Math.round(minutes * (1 + boundedFraction));
+  return Math.max(20, adjusted);
+}
+
+function isIntensitySession(session: Session): boolean {
+  if (session.type === "Long Ride") return true;
+  if (session.type !== "Ride") return false;
+
+  const zone = (session.zone || "").toLowerCase();
+  if (zone.includes("z3") || zone.includes("z4") || zone.includes("z5")) return true;
+
+  const description = (session.description || "").toLowerCase();
+  return INTENSITY_KEYWORDS.some((keyword) => description.includes(keyword));
 }
 
 function appendRecoveryNote(existing: string | null, note: string): string {
@@ -150,40 +168,57 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
     const openRideSessions = weeklySessions.filter(
       (session) => !session.completed && (session.type === "Ride" || session.type === "Long Ride"),
     );
+    const openIntensitySessions = weeklySessions.filter((session) => !session.completed && isIntensitySession(session));
+    const nextWeekOpenRideSessions = sessions
+      .filter(
+        (session) =>
+          session.week === activeWeek + 1 &&
+          !session.completed &&
+          (session.type === "Ride" || session.type === "Long Ride"),
+      )
+      .sort((a, b) => {
+        if (a.scheduledDate && b.scheduledDate) {
+          return a.scheduledDate.localeCompare(b.scheduledDate);
+        }
+        return dayOrder(a.day) - dayOrder(b.day);
+      });
 
     if (latestFatigue !== null && latestFatigue >= 8) {
-      const target = openRideSessions[0];
+      const target = openIntensitySessions[0] || openRideSessions[0];
       if (target) {
         list.push({
           id: `reduce-intensity-${target.id}`,
           kind: "reduce-intensity",
-          title: "High fatigue: reduce intensity",
-          description: `Latest fatigue is ${latestFatigue}/10. Downshift your next ride to recovery effort.`,
-          actionLabel: "Apply Easy Day",
+          title: "High fatigue: swap next intensity to easy",
+          description: `Latest fatigue is ${latestFatigue}/10. Convert your next intensity session into a recovery ride.`,
+          actionLabel: "Apply Recovery Swap",
           sessionId: target.id,
           patch: {
-            minutes: adjustMinutes(target.minutes, -0.15),
+            type: "Ride",
+            description: "Recovery Ride (Adaptive)",
+            strength: false,
+            minutes: adjustMinutesBounded(target.minutes, -0.15),
             zone: "Z1-Z2",
           },
-          note: "Adaptive suggestion: fatigue >= 8, keep this session easy and focus on recovery.",
+          note: "Adaptive suggestion: fatigue >= 8. Swapped planned intensity for an easy recovery ride.",
         });
       }
     }
 
     if (latestFatigue !== null && latestFatigue <= 3 && previousWeekCompletionPct >= 90) {
-      const target = openRideSessions.find((session) => session.type === "Long Ride") || openRideSessions[0];
+      const target = nextWeekOpenRideSessions.find((session) => session.type === "Long Ride") || nextWeekOpenRideSessions[0];
       if (target) {
         list.push({
           id: `increase-volume-${target.id}`,
           kind: "increase-volume",
-          title: "Low fatigue + high completion: slight volume increase",
-          description: `Fatigue is ${latestFatigue}/10 and previous week completion was ${Math.round(previousWeekCompletionPct)}%.`,
-          actionLabel: "Apply +12% Volume",
+          title: "Low fatigue + high completion: increase next week volume",
+          description: `Fatigue is ${latestFatigue}/10 and previous week completion was ${Math.round(previousWeekCompletionPct)}%. Increase one next-week ride by 8%.`,
+          actionLabel: "Apply +8% Next Week",
           sessionId: target.id,
           patch: {
-            minutes: adjustMinutes(target.minutes, 0.12),
+            minutes: adjustMinutesBounded(target.minutes, 0.08),
           },
-          note: "Adaptive suggestion: low fatigue with strong prior-week completion; small volume increase applied.",
+          note: "Adaptive suggestion: fatigue <= 3 and completion >= 90%. Increased next-week ride volume by 8%.",
         });
       }
     }
@@ -216,15 +251,15 @@ export function TrainingPlan({ sessions, activeWeek, goal }: Props) {
         description: `${hardRide.name} was hard enough to warrant a lighter next day.`,
         actionLabel: "Make Next Day Recovery",
         sessionId: nextSession.id,
-        patch: {
-          type: "Ride",
-          description: "Recovery Ride (Adaptive)",
-          strength: false,
-          zone: "Z1-Z2",
-          minutes: adjustMinutes(nextSession.minutes, -0.2),
-        },
-        note: `Adaptive suggestion: hard Strava ride logged on rest day (${restDate}); converted next day to recovery.`,
-      });
+          patch: {
+            type: "Ride",
+            description: "Recovery Ride (Adaptive)",
+            strength: false,
+            zone: "Z1-Z2",
+            minutes: adjustMinutesBounded(nextSession.minutes, -0.15),
+          },
+          note: `Adaptive suggestion: hard Strava ride logged on rest day (${restDate}); converted next day to recovery.`,
+        });
       break;
     }
 
