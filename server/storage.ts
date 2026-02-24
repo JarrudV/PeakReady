@@ -37,7 +37,8 @@ export interface IStorage {
   deleteAllSessions(userId: string): Promise<void>;
 
   getMetrics(userId: string): Promise<Metric[]>;
-  createMetric(userId: string, metric: InsertMetric): Promise<Metric>;
+  upsertMetric(userId: string, metric: InsertMetric): Promise<Metric>;
+  deleteMetric(userId: string, id: string): Promise<boolean>;
 
   getServiceItems(userId: string): Promise<ServiceItem[]>;
   upsertServiceItem(userId: string, item: InsertServiceItem): Promise<ServiceItem>;
@@ -219,10 +220,43 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(metrics).where(eq(metrics.userId, userId));
   }
 
-  async createMetric(userId: string, metric: InsertMetric): Promise<Metric> {
+  async upsertMetric(userId: string, metric: InsertMetric): Promise<Metric> {
     await this.claimLegacyRowsForUser(userId);
-    const [result] = await db.insert(metrics).values({ ...metric, userId }).returning();
+
+    const normalizedDate = normalizeMetricDate(metric.date);
+    const row = {
+      ...metric,
+      date: normalizedDate,
+      userId,
+    };
+
+    const [result] = await db
+      .insert(metrics)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [metrics.userId, metrics.date],
+        set: {
+          weightKg: row.weightKg ?? null,
+          restingHr: row.restingHr ?? null,
+          rideMinutes: row.rideMinutes ?? null,
+          longRideKm: row.longRideKm ?? null,
+          fatigue: row.fatigue ?? null,
+          notes: row.notes ?? null,
+        },
+      })
+      .returning();
+
     return result;
+  }
+
+  async deleteMetric(userId: string, id: string): Promise<boolean> {
+    await this.claimLegacyRowsForUser(userId);
+    const deleted = await db
+      .delete(metrics)
+      .where(and(eq(metrics.userId, userId), eq(metrics.id, id)))
+      .returning({ id: metrics.id });
+
+    return deleted.length > 0;
   }
 
   async getServiceItems(userId: string): Promise<ServiceItem[]> {
@@ -437,3 +471,21 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+
+function normalizeMetricDate(rawDate: string): string {
+  const trimmed = rawDate?.trim();
+  if (!trimmed) {
+    throw new Error("Metric date is required");
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Metric date must be a valid date string");
+  }
+
+  return parsed.toISOString().split("T")[0];
+}

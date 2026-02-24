@@ -25,6 +25,13 @@ function resolveApiKey(): string {
     );
   }
 
+  const normalized = apiKey.trim().toUpperCase();
+  if (normalized.includes("DUMMY") || normalized.includes("YOUR_") || normalized.includes("REPLACE_ME")) {
+    throw new Error(
+      "Gemini API key is a placeholder value. Replace it with a real key in GEMINI_API_KEY (or AI_INTEGRATIONS_GEMINI_API_KEY).",
+    );
+  }
+
   return apiKey;
 }
 
@@ -65,4 +72,3 @@ export function getGeminiClient(): GoogleGenAI {
 
   return geminiClient;
 }
-

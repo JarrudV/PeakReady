@@ -14,6 +14,9 @@ import { startReminderScheduler } from "./reminders";
 const app = express();
 const httpServer = createServer(app);
 
+// Respect proxy headers (Railway / reverse proxies) so req.secure is accurate.
+app.set("trust proxy", 1);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, boolean, timestamp, index, primaryKey, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, index, uniqueIndex, primaryKey, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -36,7 +36,10 @@ export const metrics = pgTable("metrics", {
   longRideKm: real("long_ride_km"),
   fatigue: integer("fatigue"),
   notes: text("notes"),
-}, (table) => [index("metrics_user_id_idx").on(table.userId)]);
+}, (table) => [
+  index("metrics_user_id_idx").on(table.userId),
+  uniqueIndex("metrics_user_id_date_unique_idx").on(table.userId, table.date),
+]);
 
 export const serviceItems = pgTable("service_items", {
   userId: text("user_id").notNull().default("__legacy__"),

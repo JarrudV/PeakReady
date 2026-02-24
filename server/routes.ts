@@ -2,7 +2,14 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { storage } from "./storage";
-import { insertMetricSchema, insertServiceItemSchema, insertGoalEventSchema } from "@shared/schema";
+import {
+  insertMetricSchema,
+  insertServiceItemSchema,
+  insertGoalEventSchema,
+  type Metric,
+  type Session,
+  type StravaActivity,
+} from "@shared/schema";
 import { getWorkoutDetails } from "./workout-library";
 import {
   syncStravaActivities,
@@ -13,13 +20,24 @@ import {
   parseStravaOAuthState,
 } from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
+import { getGeminiClient, getGeminiModel } from "./gemini-client";
 import { isAuthenticated } from "./auth";
 import { getPublicVapidKey, isPushConfigured } from "./push";
+import {
+  buildTrainingPlanFromPreset,
+  DEFAULT_TRAINING_PLAN_PRESET_ID,
+  getTrainingPlanTemplateById,
+  getTrainingPlanTemplates,
+} from "./plan-presets";
 
 const sessionUpdateSchema = z.object({
   completed: z.boolean().optional(),
   completedAt: z.string().nullable().optional(),
   completionSource: z.enum(["manual", "strava"]).nullable().optional(),
+  type: z.enum(["Ride", "Long Ride", "Strength", "Rest"]).optional(),
+  description: z.string().min(1).optional(),
+  zone: z.string().nullable().optional(),
+  strength: z.boolean().optional(),
   rpe: z.number().min(1).max(10).nullable().optional(),
   notes: z.string().nullable().optional(),
   minutes: z.number().positive().optional(),
@@ -56,6 +74,20 @@ const markNotificationReadSchema = z.object({
   all: z.boolean().optional(),
 });
 
+const loadDefaultPlanSchema = z.object({
+  presetId: z.string().trim().min(1).optional(),
+});
+
+const coachHistoryItemSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(4000),
+});
+
+const coachChatSchema = z.object({
+  message: z.string().trim().min(1).max(2000),
+  history: z.array(coachHistoryItemSchema).max(20).optional().default([]),
+});
+
 function requireUserId(req: Request, res: Response): string | null {
   const userId = (req as any)?.user?.claims?.sub;
   if (!userId || typeof userId !== "string") {
@@ -63,6 +95,25 @@ function requireUserId(req: Request, res: Response): string | null {
     return null;
   }
   return userId;
+}
+
+function sanitizeStravaErrorMessage(input: unknown): string {
+  const raw = typeof input === "string" ? input : input instanceof Error ? input.message : "Unknown Strava error";
+
+  // Remove sensitive token-like values from messages before storing/returning.
+  let sanitized = raw
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+    .replace(/(access_token|refresh_token|client_secret|authorization_code|code)=([^&\s]+)/gi, "$1=[redacted]");
+
+  if (sanitized.length > 400) {
+    sanitized = `${sanitized.slice(0, 400)}...`;
+  }
+
+  return sanitized;
+}
+
+async function setStravaLastError(userId: string, message: string | null): Promise<void> {
+  await storage.setSetting(userId, "stravaLastError", message ?? "");
 }
 
 export async function registerRoutes(
@@ -130,10 +181,27 @@ export async function registerRoutes(
       if (!userId) return;
       const parsed = insertMetricSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
-      const metric = await storage.createMetric(userId, parsed.data);
+      const metric = await storage.upsertMetric(userId, parsed.data);
       res.json(metric);
+    } catch (err: any) {
+      if (err?.message?.includes("Metric date")) {
+        return res.status(400).json({ error: err.message });
+      }
+      res.status(500).json({ error: "Failed to upsert metric" });
+    }
+  });
+
+  app.delete("/api/metrics/:id", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const deleted = await storage.deleteMetric(userId, req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Metric not found" });
+      }
+      res.json({ ok: true });
     } catch (err) {
-      res.status(500).json({ error: "Failed to create metric" });
+      res.status(500).json({ error: "Failed to delete metric" });
     }
   });
 
@@ -450,15 +518,29 @@ export async function registerRoutes(
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
+      const parsedBody = loadDefaultPlanSchema.safeParse(req.body ?? {});
+      if (!parsedBody.success) return res.status(400).json({ error: parsedBody.error.message });
+
+      const presetId = parsedBody.data.presetId ?? DEFAULT_TRAINING_PLAN_PRESET_ID;
+      const selectedTemplate = getTrainingPlanTemplateById(presetId);
+      if (!selectedTemplate) {
+        return res.status(400).json({ error: `Unknown training plan preset: ${presetId}` });
+      }
+
       await storage.deleteAllSessions(userId);
       const goal = await storage.getGoal(userId);
-      const targetDate = goal?.startDate || getDefaultTargetDate();
+      const targetDate = goal?.startDate || getDefaultTargetDate(selectedTemplate.weeks);
       const raceDate = new Date(targetDate);
       const planStart = new Date(raceDate);
-      planStart.setDate(planStart.getDate() - 12 * 7);
-      const plan = generatePlan(planStart);
+      planStart.setDate(planStart.getDate() - selectedTemplate.weeks * 7);
+
+      const plan = buildTrainingPlanFromPreset(selectedTemplate.id, planStart);
+      if (!plan) {
+        return res.status(500).json({ error: "Failed to build selected training plan" });
+      }
+
       await storage.upsertManySessions(userId, plan);
-      res.json({ success: true, count: plan.length });
+      res.json({ success: true, count: plan.length, presetId: selectedTemplate.id });
     } catch (err) {
       res.status(500).json({ error: "Failed to load default plan" });
     }
@@ -487,18 +569,21 @@ export async function registerRoutes(
   app.get("/api/strava/status", async (req, res) => {
     const userId = requireUserId(req, res);
     if (!userId) return;
-    const lastSync = await storage.getSetting(userId, "stravaLastSync");
+    const lastSyncAt = await storage.getSetting(userId, "stravaLastSync");
     const hasScope = await storage.getSetting(userId, "stravaHasActivityScope");
     const refreshToken = await storage.getSetting(userId, "stravaRefreshToken");
+    const lastErrorRaw = await storage.getSetting(userId, "stravaLastError");
+    const connected = !!refreshToken;
+    const lastError = lastErrorRaw?.trim() ? lastErrorRaw : null;
 
-    // The frontend uses `configured` to know if it should show the "Connect" button at all.
-    // So `configured` means the server has credentials.
-    // The frontend infers if the *user* is connected by looking at the auth flow or lack of activities.
-    // (We also pass back `isConnected` explicitly just in case)
     res.json({
       configured: isStravaConfigured(),
-      isConnected: !!refreshToken,
-      lastSync,
+      connected,
+      lastSyncAt: lastSyncAt || null,
+      lastError,
+      // Backwards-compatible fields currently used by frontend components.
+      isConnected: connected,
+      lastSync: lastSyncAt || null,
       hasActivityScope: hasScope === "true",
     });
   });
@@ -508,9 +593,26 @@ export async function registerRoutes(
       const userId = requireUserId(req, res);
       if (!userId) return;
 
-      const protocol = req.headers["x-forwarded-proto"] || "http";
-      const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+      const forwardedProtoRaw = req.headers["x-forwarded-proto"];
+      const forwardedHostRaw = req.headers["x-forwarded-host"];
+      const forwardedProto = Array.isArray(forwardedProtoRaw)
+        ? forwardedProtoRaw[0]
+        : forwardedProtoRaw?.split(",")[0]?.trim();
+      const forwardedHost = Array.isArray(forwardedHostRaw)
+        ? forwardedHostRaw[0]
+        : forwardedHostRaw?.split(",")[0]?.trim();
+
+      let protocol = forwardedProto || (req.secure ? "https" : "http");
+      const host = forwardedHost || req.get("host") || "localhost:5000";
+
+      // In production behind a proxy/custom domain, non-local hosts should be HTTPS.
+      const isLocalHost = /^localhost(?::\d+)?$/i.test(host) || /^127\.0\.0\.1(?::\d+)?$/i.test(host);
+      if (process.env.NODE_ENV === "production" && !isLocalHost) {
+        protocol = "https";
+      }
+
       const redirectUri = `${protocol}://${host}/api/strava/callback`;
+      console.log(`[strava] auth-url protocol=${protocol} host=${host} redirectUri=${redirectUri}`);
       const state = createStravaOAuthState(userId);
       const url = getStravaAuthUrl(redirectUri, state);
       res.json({ url });
@@ -559,19 +661,41 @@ export async function registerRoutes(
     const userId = requireUserId(req, res);
     if (!userId) return;
     if (!isStravaConfigured()) {
-      return res.status(400).json({ error: "Strava not configured" });
+      const message = "Missing STRAVA_CLIENT_ID and/or STRAVA_CLIENT_SECRET on server.";
+      await setStravaLastError(userId, message);
+      return res.status(500).json({ error: message });
     }
     const savedRefresh = await storage.getSetting(userId, "stravaRefreshToken");
     if (!savedRefresh) {
-      return res.status(400).json({ error: "Strava not connected for this user" });
+      const message = "No Strava refresh token for this user. Reconnect your Strava account.";
+      await setStravaLastError(userId, message);
+      return res.status(400).json({ error: message });
     }
     try {
       const result = await syncStravaActivities(userId, savedRefresh);
       await storage.setSetting(userId, "stravaLastSync", new Date().toISOString());
+      await setStravaLastError(userId, null);
       res.json(result);
     } catch (err: any) {
-      console.error("Strava sync error:", err.message);
-      res.status(500).json({ error: err.message || "Strava sync failed" });
+      const rawMessage = err?.message || "Strava sync failed";
+      const sanitizedRaw = sanitizeStravaErrorMessage(rawMessage);
+
+      let clientMessage = sanitizedRaw;
+      let status = 500;
+      if (sanitizedRaw.includes("Strava API error:")) {
+        status = 502;
+        clientMessage = `Strava API error while fetching activities. ${sanitizedRaw}`;
+      } else if (sanitizedRaw.includes("Strava token refresh failed:")) {
+        status = 502;
+        clientMessage = "Strava token refresh failed. Reconnect your Strava account and try again.";
+      } else if (sanitizedRaw.includes("Strava credentials not configured")) {
+        status = 500;
+        clientMessage = "Missing STRAVA_CLIENT_ID and/or STRAVA_CLIENT_SECRET on server.";
+      }
+
+      await setStravaLastError(userId, clientMessage);
+      console.error("Strava sync error:", sanitizedRaw);
+      res.status(status).json({ error: clientMessage });
     }
   });
 
@@ -613,16 +737,73 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/coach/chat", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const parsed = coachChatSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "message is required" });
+      }
+
+      const [sessions, metrics, activities, savedActiveWeek, refreshToken] = await Promise.all([
+        storage.getSessions(userId),
+        storage.getMetrics(userId),
+        storage.getStravaActivities(userId),
+        storage.getSetting(userId, "activeWeek"),
+        storage.getSetting(userId, "stravaRefreshToken"),
+      ]);
+
+      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
+      const context = buildCoachContext({
+        sessions,
+        metrics,
+        activities,
+        activeWeek,
+        stravaConnected: Boolean(refreshToken),
+      });
+
+      const prompt = buildCoachPrompt({
+        message: parsed.data.message,
+        history: parsed.data.history,
+        context,
+      });
+
+      const ai = getGeminiClient();
+      const model = getGeminiModel("gemini-2.5-flash");
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          temperature: 0.55,
+          maxOutputTokens: 1200,
+        },
+      });
+
+      const reply = response.text?.trim();
+      if (!reply) {
+        return res.status(502).json({ error: "Coach response was empty. Please retry." });
+      }
+
+      res.json({
+        reply,
+        context: {
+          activeWeek,
+          planSessionCount: sessions.filter((session) => session.week === activeWeek).length,
+          hasStravaConnection: Boolean(refreshToken),
+          stravaRecentRideCount: countRecentStravaRides(activities, 14),
+          metricsRecentCount: countRecentMetrics(metrics, 7),
+        },
+      });
+    } catch (err: any) {
+      console.error("Coach chat error:", err?.message || err);
+      res.status(500).json({ error: err?.message || "Failed to generate coach response" });
+    }
+  });
+
   app.get("/api/plan/templates", async (_req, res) => {
-    res.json([
-      {
-        id: "mtb-12week",
-        name: "12-Week MTB Race Prep",
-        description: "Progressive mountain bike training plan with base, build, peak, and taper phases. Includes strength work, interval sessions, and long rides.",
-        weeks: 12,
-        sessionsPerWeek: "3-4",
-      },
-    ]);
+    res.json(getTrainingPlanTemplates());
   });
 
   return httpServer;
@@ -739,202 +920,244 @@ async function seedTrainingPlan(userId: string) {
   const existingSessions = await storage.getSessions(userId);
   if (existingSessions.length > 0) return;
 
+  const defaultTemplate = getTrainingPlanTemplateById(DEFAULT_TRAINING_PLAN_PRESET_ID);
+  if (!defaultTemplate) throw new Error("Default training plan preset not found");
+
   const goal = await storage.getGoal(userId);
-  const targetDate = goal?.startDate || getDefaultTargetDate();
+  const targetDate = goal?.startDate || getDefaultTargetDate(defaultTemplate.weeks);
 
   const raceDate = new Date(targetDate);
   const planStart = new Date(raceDate);
-  planStart.setDate(planStart.getDate() - 12 * 7);
+  planStart.setDate(planStart.getDate() - defaultTemplate.weeks * 7);
 
-  const plan = generatePlan(planStart);
+  const plan = buildTrainingPlanFromPreset(defaultTemplate.id, planStart);
+  if (!plan) throw new Error("Failed to build default training plan preset");
+
   await storage.upsertManySessions(userId, plan);
 }
 
-function getDefaultTargetDate(): string {
+function getDefaultTargetDate(weeksAhead = 12): string {
   const d = new Date();
-  d.setDate(d.getDate() + 12 * 7);
+  d.setDate(d.getDate() + weeksAhead * 7);
   return d.toISOString().split("T")[0];
 }
 
-function generatePlan(startDate: Date) {
-  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const sessions: any[] = [];
+type CoachHistoryItem = z.infer<typeof coachHistoryItemSchema>;
 
-  for (let week = 1; week <= 12; week++) {
-    const weekStart = new Date(startDate);
-    weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
+const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-    const isRecovery = week % 4 === 0;
-    const isTaper = week >= 11;
-    const isBase = week <= 4;
-    const isBuild = week >= 5 && week <= 8;
+function safeDate(input: string): Date | null {
+  const parsed = new Date(input);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-    const weekSessions = [];
+function formatDate(input: string): string {
+  const parsed = safeDate(input);
+  if (!parsed) return input;
+  return parsed.toISOString().slice(0, 10);
+}
 
-    if (isRecovery) {
-      weekSessions.push({
-        day: "Mon",
-        type: "Ride",
-        description: "Recovery Spin",
-        minutes: 30,
-        zone: "Z1",
-      });
-      weekSessions.push({
-        day: "Wed",
-        type: "Ride",
-        description: "Easy Ride",
-        minutes: 45,
-        zone: "Z2",
-      });
-      weekSessions.push({
-        day: "Sat",
-        type: "Long Ride",
-        description: "Easy Long Ride",
-        minutes: 60 + week * 3,
-        zone: "Z2",
-        elevation: "Low",
-      });
-    } else if (isTaper) {
-      weekSessions.push({
-        day: "Mon",
-        type: "Ride",
-        description: "Short Opener",
-        minutes: 25,
-        zone: "Z2-Z3",
-      });
-      weekSessions.push({
-        day: "Wed",
-        type: "Ride",
-        description: "Light Intervals",
-        minutes: 30,
-        zone: "Z3",
-      });
-      weekSessions.push({
-        day: "Fri",
-        type: "Ride",
-        description: "Shakeout Ride",
-        minutes: 20,
-        zone: "Z1",
-      });
-    } else if (isBase) {
-      weekSessions.push({
-        day: "Mon",
-        type: "Strength",
-        description: "Core & Stability",
-        minutes: 30,
-        strength: true,
-      });
-      weekSessions.push({
-        day: "Tue",
-        type: "Ride",
-        description: "Endurance Ride",
-        minutes: 45 + week * 5,
-        zone: "Z2",
-      });
-      weekSessions.push({
-        day: "Thu",
-        type: "Ride",
-        description: "Tempo Ride",
-        minutes: 40 + week * 5,
-        zone: "Z3",
-      });
-      weekSessions.push({
-        day: "Sat",
-        type: "Long Ride",
-        description: "Weekend Long Ride",
-        minutes: 90 + week * 15,
-        zone: "Z2",
-        elevation: `${600 + week * 100}m`,
-      });
-    } else if (isBuild) {
-      weekSessions.push({
-        day: "Mon",
-        type: "Strength",
-        description: "Explosive Strength",
-        minutes: 35,
-        strength: true,
-      });
-      weekSessions.push({
-        day: "Tue",
-        type: "Ride",
-        description: "Sweet Spot Intervals",
-        minutes: 60 + (week - 4) * 5,
-        zone: "Z3-Z4",
-      });
-      weekSessions.push({
-        day: "Thu",
-        type: "Ride",
-        description: "Threshold Climbs",
-        minutes: 50 + (week - 4) * 5,
-        zone: "Z4",
-        elevation: `${800 + (week - 4) * 150}m`,
-      });
-      weekSessions.push({
-        day: "Sat",
-        type: "Long Ride",
-        description: "Endurance + Climbs",
-        minutes: 120 + (week - 4) * 15,
-        zone: "Z2-Z3",
-        elevation: `${1000 + (week - 4) * 200}m`,
-      });
-    } else {
-      weekSessions.push({
-        day: "Mon",
-        type: "Strength",
-        description: "Power & Plyometrics",
-        minutes: 40,
-        strength: true,
-      });
-      weekSessions.push({
-        day: "Tue",
-        type: "Ride",
-        description: "VO2max Intervals",
-        minutes: 60,
-        zone: "Z4-Z5",
-      });
-      weekSessions.push({
-        day: "Thu",
-        type: "Ride",
-        description: "Race Simulation",
-        minutes: 70,
-        zone: "Z3-Z5",
-        elevation: "1500m+",
-      });
-      weekSessions.push({
-        day: "Sat",
-        type: "Long Ride",
-        description: "Race Rehearsal",
-        minutes: 180,
-        zone: "Z2-Z4",
-        elevation: "1800m+",
-      });
-    }
+function getDaysAgoDate(days: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d;
+}
 
-    for (const s of weekSessions) {
-      const dayIdx = dayNames.indexOf(s.day);
-      const sessionDate = new Date(weekStart);
-      sessionDate.setDate(sessionDate.getDate() + dayIdx);
-      const dateStr = sessionDate.toISOString().split("T")[0];
+function resolveCurrentWeek(savedActiveWeek: string | null, sessions: Session[]): number {
+  if (sessions.length === 0) return 1;
+  const weeks = Array.from(new Set(sessions.map((session) => session.week))).sort((a, b) => a - b);
 
-      sessions.push({
-        id: `w${week}-${s.day.toLowerCase()}-${s.type.replace(/\s/g, "")}`,
-        week,
-        day: s.day,
-        type: s.type,
-        description: s.description,
-        minutes: s.minutes,
-        zone: s.zone || null,
-        elevation: s.elevation || null,
-        strength: s.strength || false,
-        completed: false,
-        rpe: null,
-        notes: null,
-        scheduledDate: dateStr,
-        completedAt: null,
-        detailsMarkdown: getWorkoutDetails(s.type, s.description, week),
-      });
+  const parsedActiveWeek = savedActiveWeek ? Number.parseInt(savedActiveWeek, 10) : NaN;
+  if (Number.isFinite(parsedActiveWeek) && weeks.includes(parsedActiveWeek)) {
+    return parsedActiveWeek;
+  }
+
+  for (const week of weeks) {
+    const weekSessions = sessions.filter((session) => session.week === week);
+    if (weekSessions.some((session) => !session.completed)) {
+      return week;
     }
   }
 
-  return sessions;
+  return weeks[0];
+}
+
+function getWeekSessionSummary(sessions: Session[], activeWeek: number): string {
+  const weekSessions = sessions
+    .filter((session) => session.week === activeWeek)
+    .sort((a, b) => {
+      if (a.scheduledDate && b.scheduledDate) return a.scheduledDate.localeCompare(b.scheduledDate);
+      const dayIndexA = WEEKDAY_ORDER.indexOf((a.day || "").slice(0, 3).toLowerCase());
+      const dayIndexB = WEEKDAY_ORDER.indexOf((b.day || "").slice(0, 3).toLowerCase());
+      return dayIndexA - dayIndexB;
+    });
+
+  if (weekSessions.length === 0) {
+    return "No sessions found for the selected week.";
+  }
+
+  const completed = weekSessions.filter((session) => session.completed).length;
+  const totalMinutes = weekSessions.reduce((sum, session) => sum + (session.minutes || 0), 0);
+  const detailLines = weekSessions
+    .map((session) => {
+      const datePart = session.scheduledDate ? `${session.scheduledDate} ` : "";
+      const status = session.completed ? "done" : "planned";
+      const zone = session.zone ? ` ${session.zone}` : "";
+      return `- ${datePart}${session.day}: ${session.description} (${session.type}, ${session.minutes} min${zone}) [${status}]`;
+    })
+    .join("\n");
+
+  return `Week ${activeWeek}: ${completed}/${weekSessions.length} sessions completed, ${totalMinutes} total planned minutes.\n${detailLines}`;
+}
+
+function countRecentStravaRides(activities: StravaActivity[], days: number): number {
+  const threshold = getDaysAgoDate(days).getTime();
+  return activities.filter((activity) => {
+    const startedAt = safeDate(activity.startDate);
+    return startedAt ? startedAt.getTime() >= threshold : false;
+  }).length;
+}
+
+function getStravaSummary(activities: StravaActivity[], connected: boolean): string {
+  if (!connected) {
+    return "Not connected to Strava (no refresh token).";
+  }
+
+  const threshold = getDaysAgoDate(14).getTime();
+  const recentRides = activities
+    .filter((activity) => {
+      const startedAt = safeDate(activity.startDate);
+      return startedAt ? startedAt.getTime() >= threshold : false;
+    })
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+
+  if (recentRides.length === 0) {
+    return "Connected to Strava, but no rides synced in the last 14 days.";
+  }
+
+  const totalDistanceKm = recentRides.reduce((sum, activity) => sum + (activity.distance || 0), 0) / 1000;
+  const totalElevation = recentRides.reduce((sum, activity) => sum + (activity.totalElevationGain || 0), 0);
+  const totalMovingHours = recentRides.reduce((sum, activity) => sum + (activity.movingTime || 0), 0) / 3600;
+
+  const hrValues = recentRides
+    .map((activity) => activity.averageHeartrate)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const averageHr =
+    hrValues.length > 0
+      ? (hrValues.reduce((sum, value) => sum + value, 0) / hrValues.length).toFixed(0)
+      : null;
+
+  const topRides = recentRides
+    .slice(0, 5)
+    .map((activity) => {
+      const distanceKm = ((activity.distance || 0) / 1000).toFixed(1);
+      const climbM = (activity.totalElevationGain || 0).toFixed(0);
+      return `- ${formatDate(activity.startDate)}: ${activity.name} (${distanceKm} km, ${climbM} m climb)`;
+    })
+    .join("\n");
+
+  return `Rides in last 14 days: ${recentRides.length}; distance ${totalDistanceKm.toFixed(1)} km; moving time ${totalMovingHours.toFixed(1)} h; elevation ${totalElevation.toFixed(0)} m${averageHr ? `; avg HR ${averageHr} bpm` : ""}.\nRecent rides:\n${topRides}`;
+}
+
+function countRecentMetrics(metrics: Metric[], days: number): number {
+  const threshold = getDaysAgoDate(days).getTime();
+  return metrics.filter((metric) => {
+    const metricDate = safeDate(metric.date);
+    return metricDate ? metricDate.getTime() >= threshold : false;
+  }).length;
+}
+
+function getMetricsSummary(metrics: Metric[]): string {
+  const threshold = getDaysAgoDate(7).getTime();
+  const recent = metrics
+    .filter((metric) => {
+      const metricDate = safeDate(metric.date);
+      return metricDate ? metricDate.getTime() >= threshold : false;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (recent.length === 0) {
+    return "No metrics logged in the last 7 days.";
+  }
+
+  const latest = recent[recent.length - 1];
+  const fatigueValues = recent
+    .map((metric) => metric.fatigue)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const avgFatigue =
+    fatigueValues.length > 0
+      ? (fatigueValues.reduce((sum, value) => sum + value, 0) / fatigueValues.length).toFixed(1)
+      : null;
+
+  const lines = recent.map((metric) => {
+    const parts: string[] = [];
+    if (metric.fatigue !== null && metric.fatigue !== undefined) parts.push(`fatigue ${metric.fatigue}/10`);
+    if (metric.restingHr !== null && metric.restingHr !== undefined) parts.push(`RHR ${metric.restingHr} bpm`);
+    if (metric.weightKg !== null && metric.weightKg !== undefined) parts.push(`weight ${metric.weightKg.toFixed(1)} kg`);
+    if (metric.rideMinutes !== null && metric.rideMinutes !== undefined) parts.push(`ride ${metric.rideMinutes} min`);
+    if (metric.longRideKm !== null && metric.longRideKm !== undefined) parts.push(`long ride ${metric.longRideKm.toFixed(1)} km`);
+    return `- ${metric.date}: ${parts.join(", ") || "no values"}`;
+  });
+
+  const latestParts: string[] = [];
+  if (latest.fatigue !== null && latest.fatigue !== undefined) latestParts.push(`fatigue ${latest.fatigue}/10`);
+  if (latest.restingHr !== null && latest.restingHr !== undefined) latestParts.push(`RHR ${latest.restingHr} bpm`);
+  if (latest.weightKg !== null && latest.weightKg !== undefined) latestParts.push(`weight ${latest.weightKg.toFixed(1)} kg`);
+
+  return `Metrics entries in last 7 days: ${recent.length}. Latest (${latest.date}): ${latestParts.join(", ") || "no values"}${avgFatigue ? `; avg fatigue ${avgFatigue}/10` : ""}.\nRecent metrics:\n${lines.join("\n")}`;
+}
+
+function buildCoachContext(params: {
+  sessions: Session[];
+  metrics: Metric[];
+  activities: StravaActivity[];
+  activeWeek: number;
+  stravaConnected: boolean;
+}): string {
+  const weekSummary = getWeekSessionSummary(params.sessions, params.activeWeek);
+  const stravaSummary = getStravaSummary(params.activities, params.stravaConnected);
+  const metricsSummary = getMetricsSummary(params.metrics);
+  const today = new Date().toISOString().slice(0, 10);
+
+  return [
+    `Today: ${today}`,
+    `Current week in app: ${params.activeWeek}`,
+    "Current week plan:",
+    weekSummary,
+    "Strava last 14 days:",
+    stravaSummary,
+    "Latest metrics (last 7 days):",
+    metricsSummary,
+  ].join("\n");
+}
+
+function buildCoachPrompt(params: {
+  message: string;
+  history: CoachHistoryItem[];
+  context: string;
+}): string {
+  const historyText = params.history
+    .slice(-12)
+    .map((item) => `${item.role === "assistant" ? "Coach" : "Athlete"}: ${item.content}`)
+    .join("\n");
+
+  return `You are PeakReady Coach, an MTB endurance coach.
+Style and behavior rules:
+- Be practical, direct, and supportive.
+- Give specific actions (durations, intensity zones, recovery suggestions) when useful.
+- Use the provided training context and do not invent data.
+- If information is missing, say what is missing and ask 1 clarifying question.
+- If the athlete reports severe pain, dizziness, or red-flag symptoms, advise them to stop training and seek medical care.
+- Keep responses concise (roughly 80-180 words) and structured with short bullets when helpful.
+
+Training context:
+${params.context}
+
+Recent conversation:
+${historyText || "No prior messages."}
+
+Athlete message:
+${params.message}
+
+Respond as the MTB endurance coach only.`;
 }
