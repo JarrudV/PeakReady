@@ -10,6 +10,11 @@ Replit auth has been removed. The app now uses Firebase Authentication with:
 
 Set all of these in Railway:
 
+Core server/runtime:
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `NODE_ENV=production`
+
 Client/web config (used by Vite build):
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -25,6 +30,14 @@ Server/admin config (used to verify Firebase ID tokens):
 
 Optional local bypass:
 - `AUTH_BYPASS=true` for local dev without Firebase auth.
+
+Strava integration (required for connect + sync):
+- `STRAVA_CLIENT_ID`
+- `STRAVA_CLIENT_SECRET`
+- `STRAVA_STATE_SECRET` (recommended; falls back to `SESSION_SECRET` if unset)
+
+Strava app callback URL to whitelist:
+- `https://web.peakready.app/api/strava/callback`
 
 ### Gemini / AI Plan generation
 Set one of these API key options:
