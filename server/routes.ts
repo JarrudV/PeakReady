@@ -574,7 +574,7 @@ export async function registerRoutes(
     const refreshToken = await storage.getSetting(userId, "stravaRefreshToken");
     const lastErrorRaw = await storage.getSetting(userId, "stravaLastError");
     const connected = !!refreshToken;
-    const lastError = lastErrorRaw?.trim() ? lastErrorRaw : null;
+    const lastError = lastErrorRaw?.trim() ? sanitizeStravaErrorMessage(lastErrorRaw) : null;
 
     res.json({
       configured: isStravaConfigured(),
@@ -682,7 +682,10 @@ export async function registerRoutes(
 
       let clientMessage = sanitizedRaw;
       let status = 500;
-      if (sanitizedRaw.includes("Strava API error:")) {
+      if (/Strava API error:\s*429\b/i.test(sanitizedRaw) || /rate limit/i.test(sanitizedRaw)) {
+        status = 429;
+        clientMessage = "Strava API rate limit reached. Please wait a few minutes and sync again.";
+      } else if (sanitizedRaw.includes("Strava API error:")) {
         status = 502;
         clientMessage = `Strava API error while fetching activities. ${sanitizedRaw}`;
       } else if (sanitizedRaw.includes("Strava token refresh failed:")) {

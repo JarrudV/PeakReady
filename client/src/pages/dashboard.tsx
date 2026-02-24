@@ -204,7 +204,7 @@ export function Dashboard({
               className="mt-2 text-[11px] text-brand-muted leading-relaxed relative z-10"
               data-testid="text-readiness-info"
             >
-              Readiness is mainly based on your latest fatigue score (1 fresh, 10 exhausted). If a resting-HR baseline exists, today's resting HR adjusts the score slightly.
+              Readiness is driven mainly by fatigue (1 fresh, 10 exhausted). If a resting-HR baseline exists, today&apos;s RHR can nudge the score; treat it as a simple directional signal, not a precise performance prediction.
             </p>
           )}
           <div className="mt-4 flex items-center justify-between relative z-10">

@@ -16,7 +16,7 @@ const WELCOME_MESSAGE: ChatMessage = {
   id: "coach-welcome",
   role: "assistant",
   content:
-    "I am your MTB endurance coach. Ask about this week’s plan, pacing, recovery, fueling, or how to adjust sessions based on fatigue.",
+    "I am your MTB endurance coach. Ask about this week's plan, pacing, recovery, fueling, or how to adjust sessions based on fatigue.",
 };
 
 export function CoachPage() {
@@ -92,6 +92,9 @@ export function CoachPage() {
         </h2>
         <p className="text-xs text-brand-muted mt-1">
           Chat with an AI MTB endurance coach using your current plan, recent Strava rides, and latest metrics.
+        </p>
+        <p className="text-[11px] text-brand-muted/80 mt-1">
+          Conversation is kept in this browser session only and is not stored long-term.
         </p>
       </div>
 

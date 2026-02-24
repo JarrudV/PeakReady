@@ -403,7 +403,7 @@ function AddMetricForm({
               data-testid="input-metric-weight"
             />
             <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
-              Tracks long-term body trend so training load and nutrition can be adjusted early.
+              Track long-term trend and power-to-weight direction. Small weekly changes matter more than day-to-day noise.
             </p>
           </div>
           <div>
@@ -455,7 +455,7 @@ function AddMetricForm({
             <span>10 (Exhausted)</span>
           </div>
           <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
-            Rate how you feel overall today: 1 = very fresh and ready, 10 = fully exhausted and needs recovery.
+            Rate how you feel overall: 1 = very fresh, 10 = exhausted and needing recovery.
           </p>
         </div>
         <div>
