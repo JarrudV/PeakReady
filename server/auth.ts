@@ -139,8 +139,16 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   }
 
   const idToken = authHeader.slice(7);
+  let decoded: DecodedIdToken;
+
   try {
-    const decoded = await getFirebaseAuth().verifyIdToken(idToken, true);
+    decoded = await getFirebaseAuth().verifyIdToken(idToken, true);
+  } catch (err: any) {
+    console.error("[auth] Token verification failed:", err);
+    return res.status(401).json({ message: "Unauthorized", details: err?.message });
+  }
+
+  try {
     await upsertUserFromDecodedToken(decoded);
     (req as any).user = {
       claims: claimsFromDecodedToken(decoded),
@@ -148,8 +156,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     };
     return next();
   } catch (err: any) {
-    console.error("[auth] Token verification or DB upsert failed:", err);
-    return res.status(401).json({ message: "Unauthorized", details: err?.message });
+    console.error("[auth] DB upsert failed after token verification:", err);
+    return res.status(500).json({ message: "Authentication profile sync failed", details: err?.message });
   }
 };
 

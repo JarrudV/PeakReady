@@ -1,6 +1,6 @@
 import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -22,7 +22,20 @@ import {
 } from "@shared/schema";
 
 class AuthStorage implements IAuthStorage {
+  private ensureUsersAgeColumnPromise: Promise<void> | null = null;
+
+  private async ensureUsersAgeColumn(): Promise<void> {
+    if (!this.ensureUsersAgeColumnPromise) {
+      this.ensureUsersAgeColumnPromise = (async () => {
+        await db.execute(sql`ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS age integer`);
+      })();
+    }
+
+    await this.ensureUsersAgeColumnPromise;
+  }
+
   async getUser(id: string): Promise<User | undefined> {
+    await this.ensureUsersAgeColumn();
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
@@ -33,6 +46,8 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    await this.ensureUsersAgeColumn();
+
     if (userData.email) {
       const [existingUser] = await db.select().from(users).where(eq(users.email, userData.email));
       if (existingUser && existingUser.id !== userData.id) {
@@ -74,6 +89,8 @@ class AuthStorage implements IAuthStorage {
     id: string,
     updates: Pick<UpsertUser, "age" | "firstName" | "lastName">,
   ): Promise<User | undefined> {
+    await this.ensureUsersAgeColumn();
+
     const safeUpdates = this.stripUndefined({
       ...updates,
       updatedAt: new Date(),
