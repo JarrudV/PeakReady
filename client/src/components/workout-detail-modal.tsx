@@ -12,6 +12,9 @@ import { resolveNonRideWorkoutDetails, type ExerciseRecommendation } from "@/lib
 interface Props {
   session: Session;
   onClose: () => void;
+  onToggleComplete?: () => void | Promise<void>;
+  isCompleted?: boolean;
+  completionActionLabel?: string;
 }
 
 function getBestMatchingActivity(session: Session, activities: StravaActivity[]) {
@@ -30,7 +33,28 @@ function getBestMatchingActivity(session: Session, activities: StravaActivity[])
     })[0];
 }
 
-export function WorkoutDetailModal({ session, onClose }: Props) {
+function getSessionPurpose(session: Session): string {
+  if (session.type === "Rest") return "Prioritize recovery so your next ride feels better and more sustainable.";
+  if (session.type === "Strength") return "Build durable strength and stability to support riding posture and control.";
+  if (session.type === "Long Ride") return "Build steady endurance and confidence for longer trail days.";
+  return "Build consistent ride fitness with manageable effort.";
+}
+
+function getTargetZone(session: Session): string {
+  if (session.zone) return session.zone;
+  if (session.type === "Rest") return "Recovery";
+  if (session.type === "Strength") return "RPE 4-6";
+  if (session.type === "Long Ride") return "Z2";
+  return "Z2";
+}
+
+export function WorkoutDetailModal({
+  session,
+  onClose,
+  onToggleComplete,
+  isCompleted,
+  completionActionLabel,
+}: Props) {
   const { toast } = useToast();
   const [isSharing, setIsSharing] = useState(false);
   const [notesDraft, setNotesDraft] = useState(session.notes ?? "");
@@ -44,6 +68,19 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
   const matchedActivity = getBestMatchingActivity(session, stravaActivities);
   const nonRideDetails = useMemo(() => resolveNonRideWorkoutDetails(session), [session]);
   const hasUnsavedNotes = notesDraft.trim() !== savedNotes.trim();
+  const completionState = isCompleted ?? session.completed;
+  const completionLabel = completionActionLabel ?? (completionState ? "Mark Incomplete" : "Mark Complete");
+  const quickBreakdown = nonRideDetails
+    ? [
+        `Warm-up: ${nonRideDetails.warmUp[0] || "Easy movement and prep."}`,
+        `Main set: ${nonRideDetails.mainSet[0] || session.description}`,
+        `Cool-down: ${nonRideDetails.coolDown[0] || "Easy movement to recover."}`,
+      ]
+    : [
+        "Warm-up: 10 minutes easy effort.",
+        `Main set: ${session.description}`,
+        "Cool-down: 5-10 minutes easy effort and mobility.",
+      ];
 
   useEffect(() => {
     const nextNotes = session.notes ?? "";
@@ -102,6 +139,16 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
       toast({ title: "Failed to save notes", variant: "destructive" });
     } finally {
       setIsSavingNotes(false);
+    }
+  };
+
+  const handleCompletionAction = async () => {
+    if (!onToggleComplete) return;
+    try {
+      await Promise.resolve(onToggleComplete());
+      onClose();
+    } catch {
+      // Parent handlers already report errors.
     }
   };
 
@@ -198,6 +245,29 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
           className="flex-1 overflow-y-auto p-5 workout-markdown"
           data-testid="text-workout-details"
         >
+          <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4 mb-5">
+            <h3 className="text-sm font-semibold text-brand-text mb-2">Session overview</h3>
+            <p className="text-sm text-brand-muted leading-relaxed">{getSessionPurpose(session)}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <div>
+                <p className="text-xs text-brand-muted mb-1">Duration</p>
+                <p className="text-sm font-semibold text-brand-text">{session.minutes} min</p>
+              </div>
+              <div>
+                <p className="text-xs text-brand-muted mb-1">Target zone</p>
+                <p className="text-sm font-semibold text-brand-text">{getTargetZone(session)}</p>
+              </div>
+            </div>
+            <ul className="space-y-1.5 mt-3">
+              {quickBreakdown.map((item, idx) => (
+                <li key={`quick-breakdown-${idx}`} className="text-sm text-brand-muted flex items-start gap-2">
+                  <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
+                  <span className="flex-1">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
           {nonRideDetails ? (
             <div className="space-y-5">
               <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
@@ -283,6 +353,22 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
         </div>
 
         <div className="border-t border-brand-border p-4 bg-brand-bg/50 space-y-3">
+          {onToggleComplete && (
+            <button
+              type="button"
+              onClick={handleCompletionAction}
+              className={cn(
+                "w-full min-h-[46px] rounded-lg text-sm font-semibold",
+                completionState
+                  ? "border border-brand-border bg-brand-panel-2/55 text-brand-text"
+                  : "bg-[#22c55e] text-white",
+              )}
+              data-testid="button-workout-mark-complete"
+            >
+              {completionLabel}
+            </button>
+          )}
+
           {session.rpe && (
             <div className="flex items-center text-sm">
               <span className="text-brand-muted w-12">RPE:</span>

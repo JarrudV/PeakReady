@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Metric, Session, StravaActivity } from "@shared/schema";
 import {
-  LineChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
 } from "recharts";
-import { format, parseISO } from "date-fns";
-import { Plus, X, Weight, HeartPulse, Trash2 } from "lucide-react";
+import { format, parseISO, subDays } from "date-fns";
+import { HeartPulse, Plus, Trash2, Weight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +21,68 @@ interface Props {
   sessions: Session[];
 }
 
+type ZoneKey = "Z1" | "Z2" | "Z3" | "Z4" | "Z5";
+
+const ZONE_KEYS: ZoneKey[] = ["Z1", "Z2", "Z3", "Z4", "Z5"];
+const ZONE_COLORS: Record<ZoneKey, string> = {
+  Z1: "#7dd3fc",
+  Z2: "#34d399",
+  Z3: "#facc15",
+  Z4: "#fb923c",
+  Z5: "#f87171",
+};
+
+function extractZones(zone: string | null): Array<{ zone: ZoneKey; weight: number }> {
+  if (!zone) return [];
+  const normalized = zone.toUpperCase().replace(/\s+/g, "");
+  const rangeMatch = normalized.match(/Z([1-5])[-/]Z?([1-5])/);
+
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]);
+    const end = Number(rangeMatch[2]);
+    if (start <= end) {
+      const span = end - start + 1;
+      return Array.from({ length: span }, (_, idx) => {
+        const zoneValue = `Z${start + idx}` as ZoneKey;
+        return { zone: zoneValue, weight: 1 / span };
+      });
+    }
+  }
+
+  const matches = Array.from(new Set((normalized.match(/Z[1-5]/g) || []) as ZoneKey[]));
+  if (matches.length === 0) return [];
+  return matches.map((item) => ({ zone: item, weight: 1 / matches.length }));
+}
+
+function getRecentZoneTotals(sessions: Session[]) {
+  const cutoff = subDays(new Date(), 27).toISOString().slice(0, 10);
+  const totals: Record<ZoneKey, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
+
+  for (const session of sessions) {
+    if (!session.completed) continue;
+    if (session.type !== "Ride" && session.type !== "Long Ride") continue;
+
+    const sessionDate = session.completedAt?.slice(0, 10) || session.scheduledDate;
+    if (!sessionDate || sessionDate < cutoff) continue;
+
+    const buckets = extractZones(session.zone);
+    const minutes = Math.max(session.minutes || 0, 0);
+    if (minutes <= 0) continue;
+
+    if (buckets.length === 0) {
+      totals.Z2 += minutes;
+      continue;
+    }
+
+    for (const bucket of buckets) {
+      totals[bucket.zone] += minutes * bucket.weight;
+    }
+  }
+
+  const totalMinutes = ZONE_KEYS.reduce((sum, zone) => sum + totals[zone], 0);
+  return { totals, totalMinutes };
+}
+
 export function Metrics({ metrics, sessions }: Props) {
   const [isAdding, setIsAdding] = useState(false);
   const { toast } = useToast();
@@ -28,19 +90,38 @@ export function Metrics({ metrics, sessions }: Props) {
     queryKey: ["/api/strava/activities"],
   });
 
-  const sortedMetrics = [...metrics].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  const sortedMetrics = useMemo(
+    () => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [metrics],
   );
 
-  const chartData = [...sortedMetrics]
-    .reverse()
-    .filter((m) => m.weightKg != null)
-    .map((m) => ({
-      ...m,
-      dateFormatted: format(parseISO(m.date), "MMM d"),
-    }));
+  const chartData = useMemo(
+    () =>
+      [...sortedMetrics]
+        .reverse()
+        .filter((item) => item.weightKg != null)
+        .map((item) => ({
+          ...item,
+          dateFormatted: format(parseISO(item.date), "MMM d"),
+        })),
+    [sortedMetrics],
+  );
 
-  const plannedVsActualData = buildPlannedVsActualSeries(sessions, stravaActivities);
+  const plannedVsActualData = useMemo(
+    () => buildPlannedVsActualSeries(sessions, stravaActivities),
+    [sessions, stravaActivities],
+  );
+  const { totals: zoneTotals, totalMinutes: zoneTotalMinutes } = useMemo(
+    () => getRecentZoneTotals(sessions),
+    [sessions],
+  );
+
+  const latestWeight = sortedMetrics.find((item) => item.weightKg != null)?.weightKg ?? null;
+  const latestFatigue = sortedMetrics.find((item) => item.fatigue != null)?.fatigue ?? null;
+  const completedSessions = sessions.filter((session) => session.completed).length;
+  const dominantZone = ZONE_KEYS.reduce((best, current) =>
+    zoneTotals[current] > zoneTotals[best] ? current : best,
+  );
 
   const handleAddEntry = async (entry: {
     date: string;
@@ -51,7 +132,7 @@ export function Metrics({ metrics, sessions }: Props) {
   }) => {
     try {
       await apiRequest("POST", "/api/metrics", entry);
-      queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
       setIsAdding(false);
       toast({ title: "Metrics saved" });
     } catch {
@@ -60,12 +141,11 @@ export function Metrics({ metrics, sessions }: Props) {
   };
 
   const handleDeleteEntry = async (metricId: string) => {
-    const confirmed = window.confirm("Delete this metric entry?");
-    if (!confirmed) return;
+    if (!window.confirm("Delete this metric entry?")) return;
 
     try {
       await apiRequest("DELETE", `/api/metrics/${metricId}`);
-      queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
       toast({ title: "Metric deleted" });
     } catch {
       toast({ title: "Failed to delete metric", variant: "destructive" });
@@ -73,16 +153,16 @@ export function Metrics({ metrics, sessions }: Props) {
   };
 
   return (
-    <div className="p-4 space-y-6" data-testid="metrics-view">
+    <div className="p-4 space-y-5" data-testid="metrics-view">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-brand-text" data-testid="text-metrics-title">Metrics</h2>
+        <h2 className="text-xl font-semibold text-brand-text" data-testid="text-metrics-title">
+          Stats
+        </h2>
         <button
-          onClick={() => setIsAdding(!isAdding)}
+          onClick={() => setIsAdding((prev) => !prev)}
           className={cn(
-            "p-2 rounded-full transition-all shadow-lg",
-            isAdding
-              ? "bg-brand-panel-2 text-brand-text"
-              : "bg-gradient-secondary text-brand-bg shadow-[0_0_15px_rgba(255,168,0,0.4)]"
+            "p-2 rounded-full border border-brand-border transition-colors",
+            isAdding ? "bg-brand-panel-2 text-brand-text" : "bg-brand-panel text-brand-primary",
           )}
           data-testid="button-toggle-add-metric"
         >
@@ -90,210 +170,218 @@ export function Metrics({ metrics, sessions }: Props) {
         </button>
       </div>
 
-      {isAdding && (
-        <AddMetricForm
-          onAdd={handleAddEntry}
-          onCancel={() => setIsAdding(false)}
-        />
-      )}
-
-      {!isAdding && chartData.length > 0 && (
-        <div className="glass-panel p-4 border-brand-border/50 shadow-[0_0_20px_rgba(65,209,255,0.05)] relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-primary opacity-10 blur-3xl -mr-10 -mt-10 rounded-full pointer-events-none" />
-          <h3 className="text-brand-muted text-[10px] uppercase font-bold tracking-widest mb-4">
-            Weight Trend (kg)
-          </h3>
-          <div className="h-48 w-full relative z-10">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(255,255,255,0.05)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="dateFormatted"
-                  stroke="rgba(255,255,255,0.4)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  dy={10}
-                />
-                <YAxis
-                  domain={["dataMin - 2", "dataMax + 2"]}
-                  stroke="rgba(255,255,255,0.4)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  dx={-10}
-                  width={30}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "rgba(15,12,41,0.95)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                  }}
-                  itemStyle={{ color: "#41D1FF" }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="weightKg"
-                  stroke="#41D1FF"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: "#41D1FF", strokeWidth: 0 }}
-                  activeDot={{
-                    r: 6,
-                    fill: "#fff",
-                    stroke: "#41D1FF",
-                    strokeWidth: 2,
-                  }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+      {isAdding && <AddMetricForm onAdd={handleAddEntry} onCancel={() => setIsAdding(false)} />}
 
       {!isAdding && (
-        <div className="glass-panel p-4 border-brand-border/50 shadow-[0_0_20px_rgba(255,168,0,0.05)] relative overflow-hidden">
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-secondary opacity-10 blur-3xl -ml-10 -mb-10 rounded-full pointer-events-none" />
-          <h3 className="text-brand-muted text-[10px] uppercase font-bold tracking-widest mb-4">
-            Planned vs Actual (Last 14 Days)
-          </h3>
-          <div className="h-56 w-full relative z-10">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={plannedVsActualData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(255,255,255,0.05)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="dateFormatted"
-                  stroke="rgba(255,255,255,0.4)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  dy={10}
-                />
-                <YAxis
-                  stroke="rgba(255,255,255,0.4)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  dx={-10}
-                  width={35}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "rgba(15,12,41,0.95)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                  }}
-                  formatter={(value: number, name: string) => [
-                    `${Number(value || 0).toFixed(0)} min`,
-                    name,
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="plannedMinutes"
-                  name="Planned"
-                  stroke="#41D1FF"
-                  strokeWidth={2.5}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="actualMinutes"
-                  name="Actual (Strava)"
-                  stroke="#FFA800"
-                  strokeWidth={2.5}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mt-3">
-            Missing Strava data is shown as 0 minutes.
-          </p>
-        </div>
-      )}
+        <>
+          <section className="grid grid-cols-2 gap-2.5" data-testid="stats-summary">
+            <SummaryCard
+              label="Latest fatigue"
+              value={latestFatigue != null ? `${latestFatigue}/10` : "No data"}
+              helper="How hard your body feels right now."
+            />
+            <SummaryCard
+              label="Latest weight"
+              value={latestWeight != null ? `${latestWeight.toFixed(1)} kg` : "No data"}
+              helper="Long-term trend matters more than daily swings."
+            />
+            <SummaryCard
+              label="Completed sessions"
+              value={String(completedSessions)}
+              helper="Total sessions completed in your plan."
+              className="col-span-2"
+            />
+          </section>
 
-      {!isAdding && (
-        <div className="space-y-3">
-          <h3 className="text-lg font-bold text-brand-text">History</h3>
-          {sortedMetrics.length === 0 ? (
-            <p className="text-brand-muted text-center py-6 glass-panel border-brand-border/50" data-testid="text-no-metrics">
-              No metrics recorded yet.
-            </p>
-          ) : (
-            sortedMetrics.map((m) => (
-              <div
-                key={m.id}
-                className="glass-panel p-4 border-brand-border/40"
-                data-testid={`card-metric-${m.id}`}
-              >
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-brand-border/50">
-                  <span className="font-bold text-sm text-brand-text">
-                    {format(parseISO(m.date), "MMM d, yyyy")}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {m.fatigue && (
-                      <span
-                        className={cn(
-                          "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded-md border",
-                          m.fatigue >= 8
-                            ? "bg-brand-danger/10 text-brand-danger border-brand-danger/30 shadow-[0_0_8px_rgba(255,92,122,0.2)]"
-                            : m.fatigue >= 5
-                              ? "bg-brand-warning/10 text-brand-warning border-brand-warning/30 shadow-[0_0_8px_rgba(255,168,0,0.2)]"
-                              : "bg-brand-success/10 text-brand-success border-brand-success/30"
-                        )}
-                      >
-                        Fatigue: {m.fatigue}/10
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteEntry(m.id)}
-                      className="p-1.5 rounded-md text-brand-muted hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
-                      aria-label={`Delete metric for ${format(parseISO(m.date), "MMM d, yyyy")}`}
-                      data-testid={`button-delete-metric-${m.id}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-sm mt-3">
-                  {m.weightKg && (
-                    <div className="flex items-center text-brand-text">
-                      <Weight size={16} className="text-brand-muted mr-2" />
-                      <span className="font-semibold">{m.weightKg} kg</span>
-                    </div>
-                  )}
-                  {m.restingHr && (
-                    <div className="flex items-center text-brand-text">
-                      <HeartPulse
-                        size={16}
-                        className="text-brand-danger/80 mr-2"
+          <section className="glass-panel p-4" data-testid="zone-distribution">
+            <h3 className="text-base font-semibold text-brand-text">Ride intensity distribution (last 28 days)</h3>
+            {zoneTotalMinutes <= 0 ? (
+              <p className="text-sm text-brand-muted mt-2">
+                No completed rides in the last 28 days yet.
+              </p>
+            ) : (
+              <>
+                <div className="mt-3 h-3 w-full rounded-full overflow-hidden bg-brand-bg/60 border border-brand-border/50 flex">
+                  {ZONE_KEYS.map((zone) => {
+                    const minutes = zoneTotals[zone];
+                    const widthPct = (minutes / zoneTotalMinutes) * 100;
+                    if (widthPct <= 0) return null;
+                    return (
+                      <div
+                        key={zone}
+                        style={{ width: `${widthPct}%`, backgroundColor: ZONE_COLORS[zone] }}
+                        aria-label={`${zone} ${Math.round(minutes)} minutes`}
                       />
-                      <span className="font-semibold">{m.restingHr} bpm</span>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-brand-muted mt-2">
+                  Most of your recent riding time is in {dominantZone}. Keep most sessions easy to stay consistent.
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  {ZONE_KEYS.map((zone) => (
+                    <div key={zone} className="flex items-center gap-2 text-xs text-brand-muted">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: ZONE_COLORS[zone] }}
+                      />
+                      <span>
+                        {zone}: {Math.round(zoneTotals[zone])} min
+                      </span>
                     </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
+          {chartData.length > 0 && (
+            <section className="glass-panel p-4" data-testid="weight-trend-card">
+              <h3 className="text-base font-semibold text-brand-text mb-3">Weight trend</h3>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis dataKey="dateFormatted" stroke="rgba(255,255,255,0.5)" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis domain={["dataMin - 2", "dataMax + 2"]} stroke="rgba(255,255,255,0.5)" fontSize={12} tickLine={false} axisLine={false} width={34} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "rgba(15,12,41,0.95)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="weightKg"
+                      stroke="#41D1FF"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: "#41D1FF", strokeWidth: 0 }}
+                      activeDot={{ r: 5, fill: "#fff", stroke: "#41D1FF", strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
+          <section className="glass-panel p-4" data-testid="planned-actual-card">
+            <h3 className="text-base font-semibold text-brand-text mb-3">Planned vs actual (last 14 days)</h3>
+            <div className="h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={plannedVsActualData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <XAxis dataKey="dateFormatted" stroke="rgba(255,255,255,0.5)" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.5)" fontSize={12} tickLine={false} axisLine={false} width={38} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(15,12,41,0.95)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: "8px",
+                      color: "#fff",
+                    }}
+                    formatter={(value: number, name: string) => [`${Number(value || 0).toFixed(0)} min`, name]}
+                  />
+                  <Line type="monotone" dataKey="plannedMinutes" name="Planned" stroke="#41D1FF" strokeWidth={2.3} dot={false} />
+                  <Line type="monotone" dataKey="actualMinutes" name="Actual (Strava)" stroke="#FFA800" strokeWidth={2.3} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-brand-muted mt-2">Days with no Strava activity show 0 minutes.</p>
+          </section>
+
+          <section className="space-y-2.5">
+            <h3 className="text-lg font-semibold text-brand-text">Metrics history</h3>
+            {sortedMetrics.length === 0 ? (
+              <p
+                className="text-brand-muted text-center py-6 glass-panel border-brand-border/50"
+                data-testid="text-no-metrics"
+              >
+                No metrics recorded yet.
+              </p>
+            ) : (
+              sortedMetrics.map((metric) => (
+                <div
+                  key={metric.id}
+                  className="glass-panel p-4 border-brand-border/40"
+                  data-testid={`card-metric-${metric.id}`}
+                >
+                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-brand-border/45">
+                    <span className="font-semibold text-sm text-brand-text">
+                      {format(parseISO(metric.date), "MMM d, yyyy")}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {metric.fatigue && (
+                        <span
+                          className={cn(
+                            "text-xs px-2 py-0.5 rounded-md border",
+                            metric.fatigue >= 8
+                              ? "bg-brand-danger/10 text-brand-danger border-brand-danger/30"
+                              : metric.fatigue >= 5
+                                ? "bg-brand-warning/10 text-brand-warning border-brand-warning/30"
+                                : "bg-brand-success/10 text-brand-success border-brand-success/30",
+                          )}
+                        >
+                          Fatigue {metric.fatigue}/10
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEntry(metric.id)}
+                        className="p-1.5 rounded-md text-brand-muted hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
+                        aria-label={`Delete metric for ${format(parseISO(metric.date), "MMM d, yyyy")}`}
+                        data-testid={`button-delete-metric-${metric.id}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm mt-3">
+                    {metric.weightKg && (
+                      <div className="flex items-center text-brand-text">
+                        <Weight size={16} className="text-brand-muted mr-2" />
+                        <span className="font-medium">{metric.weightKg} kg</span>
+                      </div>
+                    )}
+                    {metric.restingHr && (
+                      <div className="flex items-center text-brand-text">
+                        <HeartPulse size={16} className="text-brand-danger/85 mr-2" />
+                        <span className="font-medium">{metric.restingHr} bpm</span>
+                      </div>
+                    )}
+                  </div>
+                  {metric.notes && (
+                    <p className="mt-3 text-sm text-brand-muted italic bg-brand-bg/50 p-2 rounded-lg">
+                      &ldquo;{metric.notes}&rdquo;
+                    </p>
                   )}
                 </div>
-                {m.notes && (
-                  <p className="mt-3 text-sm text-brand-muted italic bg-brand-bg p-2 rounded-lg">
-                    &ldquo;{m.notes}&rdquo;
-                  </p>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+              ))
+            )}
+          </section>
+        </>
       )}
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  helper,
+  className,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("glass-panel p-3", className)}>
+      <p className="text-xs text-brand-muted">{label}</p>
+      <p className="text-lg font-semibold text-brand-text mt-0.5">{value}</p>
+      <p className="text-xs text-brand-muted mt-1">{helper}</p>
     </div>
   );
 }
@@ -314,22 +402,22 @@ function buildPlannedVsActualSeries(sessions: Session[], activities: StravaActiv
     });
   }
 
-  const indexByDate = new Map(days.map((d, idx) => [d.key, idx]));
+  const indexByDate = new Map(days.map((day, idx) => [day.key, idx]));
 
   for (const session of sessions) {
     if (!session.scheduledDate) continue;
-    const idx = indexByDate.get(session.scheduledDate);
-    if (idx === undefined) continue;
+    const index = indexByDate.get(session.scheduledDate);
+    if (index === undefined) continue;
     if (session.type !== "Ride" && session.type !== "Long Ride") continue;
-    days[idx].plannedMinutes += session.minutes || 0;
+    days[index].plannedMinutes += session.minutes || 0;
   }
 
   for (const activity of activities) {
-    const key = activity.startDate.slice(0, 10);
-    const idx = indexByDate.get(key);
-    if (idx === undefined) continue;
+    const dateKey = activity.startDate.slice(0, 10);
+    const index = indexByDate.get(dateKey);
+    if (index === undefined) continue;
     const seconds = activity.movingTime || activity.elapsedTime || 0;
-    days[idx].actualMinutes += Math.round(seconds / 60);
+    days[index].actualMinutes += Math.round(seconds / 60);
   }
 
   return days;
@@ -348,15 +436,15 @@ function AddMetricForm({
   }) => void;
   onCancel: () => void;
 }) {
-  const td = new Date().toISOString().split("T")[0];
-  const [date, setDate] = useState(td);
-  const [weightKg, setWeightKg] = useState<string>("");
-  const [restingHr, setRestingHr] = useState<string>("");
-  const [fatigue, setFatigue] = useState<string>("5");
+  const today = new Date().toISOString().split("T")[0];
+  const [date, setDate] = useState(today);
+  const [weightKg, setWeightKg] = useState("");
+  const [restingHr, setRestingHr] = useState("");
+  const [fatigue, setFatigue] = useState("5");
   const [notes, setNotes] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     onAdd({
       date,
       weightKg: weightKg ? parseFloat(weightKg) : undefined,
@@ -367,74 +455,66 @@ function AddMetricForm({
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="glass-panel p-5 border-brand-primary/30 shadow-[0_0_20px_rgba(65,209,255,0.1)] relative overflow-hidden"
-      data-testid="form-add-metric"
-    >
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-primary opacity-20 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
-      <h3 className="text-lg font-bold mb-4 text-brand-text">Log Daily Metrics</h3>
-      <div className="space-y-4 relative z-10">
+    <form onSubmit={handleSubmit} className="glass-panel p-5" data-testid="form-add-metric">
+      <h3 className="text-lg font-semibold mb-4 text-brand-text">Log daily metrics</h3>
+      <div className="space-y-4">
         <div>
-          <label className="text-xs text-brand-muted font-medium block mb-1">
-            Date
-          </label>
+          <label className="text-xs text-brand-muted font-medium block mb-1">Date</label>
           <input
             type="date"
             required
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(event) => setDate(event.target.value)}
             className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
             data-testid="input-metric-date"
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-brand-muted font-medium block mb-1">
-              Weight (kg)
-            </label>
+            <label className="text-xs text-brand-muted font-medium block mb-1">Weight (kg)</label>
             <input
               type="number"
               step="0.1"
               value={weightKg}
-              onChange={(e) => setWeightKg(e.target.value)}
+              onChange={(event) => setWeightKg(event.target.value)}
               className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
               placeholder="e.g. 75.5"
               data-testid="input-metric-weight"
             />
-            <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
-              Track long-term trend and power-to-weight direction. Small weekly changes matter more than day-to-day noise.
+            <p className="text-xs text-brand-muted mt-1 leading-relaxed">
+              Track trend over time and power-to-weight direction.
             </p>
           </div>
+
           <div>
-            <label className="text-xs text-brand-muted font-medium block mb-1">
-              Resting HR
-            </label>
+            <label className="text-xs text-brand-muted font-medium block mb-1">Resting HR</label>
             <input
               type="number"
               value={restingHr}
-              onChange={(e) => setRestingHr(e.target.value)}
+              onChange={(event) => setRestingHr(event.target.value)}
               className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
               placeholder="bpm"
               data-testid="input-metric-hr"
             />
-            <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
-              Compare to your normal baseline. A higher-than-usual value can indicate poor recovery or rising stress.
+            <p className="text-xs text-brand-muted mt-1 leading-relaxed">
+              Compare against your usual baseline to spot recovery changes.
             </p>
           </div>
         </div>
+
         <div>
           <label className="text-xs text-brand-muted font-medium block mb-1">
             <span className="flex justify-between">
-              <span>Fatigue Score</span>
+              <span>Fatigue score</span>
               <span
                 className={cn(
-                  "font-bold",
-                  parseInt(fatigue) >= 8
+                  "font-semibold",
+                  parseInt(fatigue, 10) >= 8
                     ? "text-brand-danger"
-                    : parseInt(fatigue) >= 5
+                    : parseInt(fatigue, 10) >= 5
                       ? "text-brand-warning"
-                      : "text-brand-success"
+                      : "text-brand-success",
                 )}
               >
                 {fatigue}/10
@@ -446,7 +526,7 @@ function AddMetricForm({
             min="1"
             max="10"
             value={fatigue}
-            onChange={(e) => setFatigue(e.target.value)}
+            onChange={(event) => setFatigue(event.target.value)}
             className="w-full accent-[#41D1FF]"
             data-testid="input-metric-fatigue"
           />
@@ -454,37 +534,37 @@ function AddMetricForm({
             <span>1 (Fresh)</span>
             <span>10 (Exhausted)</span>
           </div>
-          <p className="text-[10px] text-brand-muted mt-1 leading-relaxed">
-            Rate how you feel overall: 1 = very fresh, 10 = exhausted and needing recovery.
+          <p className="text-xs text-brand-muted mt-1 leading-relaxed">
+            Rate overall body feel: 1 is fresh, 10 is exhausted.
           </p>
         </div>
+
         <div>
-          <label className="text-xs text-brand-muted font-medium block mb-1">
-            Notes
-          </label>
+          <label className="text-xs text-brand-muted font-medium block mb-1">Notes</label>
           <textarea
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(event) => setNotes(event.target.value)}
             className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm min-h-[80px] resize-none focus:ring-1 focus:ring-brand-primary outline-none"
-            placeholder="Sleep quality, mood, diet, etc..."
+            placeholder="Sleep, stress, soreness, anything useful."
             data-testid="input-metric-notes"
           />
         </div>
-        <div className="flex gap-3 pt-3 text-[10px] tracking-widest uppercase font-bold">
+
+        <div className="flex gap-3 pt-2">
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 py-3 bg-brand-bg border border-brand-border/60 text-brand-text rounded-lg transition-colors"
+            className="flex-1 py-2.5 bg-brand-bg border border-brand-border/60 text-brand-text rounded-lg"
             data-testid="button-cancel-metric"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="flex-1 py-3 bg-gradient-secondary border border-brand-warning/50 text-brand-bg rounded-lg transition-all shadow-[0_0_15px_rgba(255,168,0,0.4)]"
+            className="flex-1 py-2.5 bg-brand-primary text-brand-bg rounded-lg font-semibold"
             data-testid="button-save-metric"
           >
-            Save Metrics
+            Save metrics
           </button>
         </div>
       </div>

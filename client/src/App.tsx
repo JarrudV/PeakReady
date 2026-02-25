@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -15,6 +15,7 @@ import {
   Bike,
   MoreHorizontal,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { Dashboard } from "@/pages/dashboard";
 import { TrainingPlan } from "@/pages/training-plan";
@@ -28,12 +29,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Session, Metric, ServiceItem, GoalEvent } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
-import { OfflineIndicator } from "@/components/offline-indicator";
 import { NotificationsCenter } from "@/components/notifications-center";
 import { SettingsModal } from "@/components/settings-modal";
 import { NewRiderOnboarding } from "@/components/new-rider-onboarding";
 import { AccountCenterModal } from "@/components/account-center-modal";
 import { useToast } from "@/hooks/use-toast";
+import { PlanManager } from "@/components/plan-manager";
+import { AIPlanBuilder } from "@/components/ai-plan-builder";
 import {
   applyTheme,
   isThemeAccent,
@@ -44,7 +46,15 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 
-type Tab = "dashboard" | "plan" | "coach" | "metrics" | "service" | "events" | "strava" | "more";
+type Tab =
+  | "dashboard"
+  | "plan"
+  | "coach"
+  | "metrics"
+  | "service"
+  | "events"
+  | "strava"
+  | "more";
 
 function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
@@ -157,21 +167,24 @@ function MainApp() {
     setActiveWeek(boundedWeek);
     try {
       await apiRequest("PUT", "/api/settings/activeWeek", { value: boundedWeek.toString() });
-    } catch { }
+      await queryClient.invalidateQueries({ queryKey: ["/api/settings", "activeWeek"] });
+    } catch {
+      toast({ title: "Failed to switch week", variant: "destructive" });
+    }
   };
 
   const handleThemeModeChange = async (mode: ThemeMode) => {
     setThemeMode(mode);
     try {
       await apiRequest("PUT", "/api/settings/themeMode", { value: mode });
-    } catch { }
+    } catch {}
   };
 
   const handleThemeAccentChange = async (accent: ThemeAccent) => {
     setThemeAccent(accent);
     try {
       await apiRequest("PUT", "/api/settings/themeAccent", { value: accent });
-    } catch { }
+    } catch {}
   };
 
   const handleCompleteOnboarding = async () => {
@@ -197,9 +210,7 @@ function MainApp() {
   const subscriptionTier = subscriptionTierSetting?.value === "pro" ? "pro" : "free";
   const billingCycle = subscriptionBillingSetting?.value === "annual" ? "annual" : "monthly";
   const riderDisplayName =
-    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
-    user?.email ||
-    "Rider";
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Rider";
   const isMoreActive =
     activeTab === "more" ||
     activeTab === "events" ||
@@ -237,14 +248,10 @@ function MainApp() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-gradient-primary animate-pulse" />
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-brand-text">
-              Peak
-            </span>
+            <span className="text-xl font-bold tracking-tight text-brand-text">Peak</span>
             <span className="text-xl font-bold text-gradient-primary">Ready</span>
           </div>
-          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">
-            Loading...
-          </div>
+          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">Loading...</div>
         </div>
       </div>
     );
@@ -262,14 +269,10 @@ function MainApp() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-gradient-primary animate-pulse" />
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-brand-text">
-              Peak
-            </span>
+            <span className="text-xl font-bold tracking-tight text-brand-text">Peak</span>
             <span className="text-xl font-bold text-gradient-primary">Ready</span>
           </div>
-          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">
-            Loading...
-          </div>
+          <div className="text-brand-muted text-xs uppercase tracking-widest font-bold">Loading...</div>
         </div>
       </div>
     );
@@ -277,108 +280,53 @@ function MainApp() {
 
   return (
     <div className="min-h-screen text-brand-text font-sans overflow-x-hidden pb-[calc(env(safe-area-inset-bottom,0px)+7rem)]">
-      <header className="glass-panel rounded-none border-x-0 border-t-0 pt-safe-top px-safe pb-4 z-50">
-        <div className="mobile-shell flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <button
-              onClick={() => setAccountOpen(true)}
-              className="flex-1 min-w-0 overflow-hidden flex items-center gap-3 rounded-xl border border-brand-border bg-brand-panel-2 px-2.5 py-2 text-left"
-              title="Account"
-              data-testid="button-open-account"
-            >
-              <div className="w-11 h-11 rounded-full overflow-hidden border border-brand-border/70 bg-brand-panel-2 shrink-0 flex items-center justify-center">
-                {user?.profileImageUrl ? (
-                  <img
-                    src={user.profileImageUrl}
-                    alt=""
-                    className="w-11 h-11 rounded-full object-cover"
-                    data-testid="img-user-avatar"
-                  />
-                ) : (
-                  <User size={18} />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] tracking-wide text-brand-muted truncate">Signed in as</p>
-                <p className="text-sm font-semibold truncate">{riderDisplayName}</p>
-              </div>
-            </button>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <NotificationsCenter />
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="w-11 h-11 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors bg-brand-panel-2 border border-brand-border"
-                title="Settings"
-                data-testid="button-open-settings"
-              >
-                <Settings size={18} />
-              </button>
-            </div>
+      <header className="pt-safe-top px-safe pb-2">
+        <div className="mobile-shell flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg overflow-hidden border border-brand-border/50 bg-brand-panel-2 shrink-0">
+            <img src="/favicon.png" alt="PeakReady logo" className="w-full h-full object-cover" />
           </div>
-
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-xl overflow-hidden border border-brand-border/60 bg-brand-panel-2 shrink-0">
-              <img
-                src="/favicon.png"
-                alt="PeakReady logo"
-                className="w-full h-full object-cover"
-                data-testid="img-app-logo"
-              />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-[22px] font-bold tracking-tight leading-tight truncate" data-testid="text-app-title">
-                Peak<span className="text-gradient-primary">Ready</span>
-              </h1>
-              <p className="text-sm text-brand-muted leading-snug">Get back on the bike. Build confidence. Ride consistently.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <OfflineIndicator />
-          </div>
+          <h1 className="text-lg font-semibold tracking-tight text-brand-text">
+            Peak<span className="text-gradient-primary">Ready</span>
+          </h1>
         </div>
       </header>
 
-      <main className="mobile-shell w-full px-safe sm:px-4 pb-4 pt-5 relative">
+      <main className="mobile-shell w-full px-safe sm:px-4 pb-4 pt-2 relative">
         {activeTab === "dashboard" && (
           <Dashboard
             sessions={sessions}
-            metrics={metrics}
-            goal={goal || undefined}
             activeWeek={activeWeek}
             maxWeek={maxWeek}
-            onWeekChange={handleWeekChange}
-            onOpenOnboarding={() => setOnboardingOpen(true)}
+            onOpenPlan={() => setActiveTab("plan")}
           />
         )}
         {activeTab === "plan" && (
-          <TrainingPlan sessions={sessions} activeWeek={activeWeek} goal={goal || undefined} />
+          <TrainingPlan
+            sessions={sessions}
+            activeWeek={activeWeek}
+            maxWeek={maxWeek}
+            onWeekChange={handleWeekChange}
+          />
         )}
-        {activeTab === "coach" && (
-          <CoachPage />
-        )}
+        {activeTab === "coach" && <CoachPage />}
         {activeTab === "metrics" && <Metrics metrics={metrics} sessions={sessions} />}
-        {activeTab === "service" && (
-          <ServiceTracker serviceItems={serviceItems} />
-        )}
-        {activeTab === "events" && (
-          <EventTracker goal={goal || undefined} />
-        )}
-        {activeTab === "strava" && (
-          <StravaDashboard />
-        )}
+        {activeTab === "service" && <ServiceTracker serviceItems={serviceItems} />}
+        {activeTab === "events" && <EventTracker goal={goal || undefined} />}
+        {activeTab === "strava" && <StravaDashboard />}
         {activeTab === "more" && (
           <MoreHub
+            sessionCount={sessions.length}
+            goal={goal || undefined}
             onOpenEvents={() => setActiveTab("events")}
             onOpenBike={() => setActiveTab("service")}
             onOpenStrava={() => setActiveTab("strava")}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenAccount={() => setAccountOpen(true)}
           />
         )}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 z-30 px-safe pt-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
+      <nav className="fixed inset-x-0 bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 z-30 px-safe pt-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] shadow-[0_-6px_18px_rgba(0,0,0,0.32)]">
         <div className="mobile-shell grid w-full grid-cols-[1fr_1fr_auto_1fr_1fr] items-end gap-x-1.5">
           <NavItem
             icon={<CalendarDays size={24} />}
@@ -466,7 +414,7 @@ function NavItem({
   onClick,
   testId,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   isActive: boolean;
   onClick: () => void;
@@ -477,9 +425,7 @@ function NavItem({
       onClick={onClick}
       className={cn(
         "relative min-h-[52px] w-full min-w-0 rounded-xl px-0.5 py-2 transition-all duration-200 flex flex-col items-center justify-end gap-1",
-        isActive
-          ? "text-brand-primary bg-brand-panel-2/40"
-          : "text-brand-muted hover:text-brand-text"
+        isActive ? "text-brand-primary bg-brand-panel-2/30" : "text-brand-muted hover:text-brand-text",
       )}
       data-testid={testId}
     >
@@ -489,12 +435,8 @@ function NavItem({
           isActive ? "bg-brand-primary opacity-100" : "opacity-0",
         )}
       />
-      <div className={cn("h-6 w-6 flex items-center justify-center", isActive && "drop-shadow-[0_0_8px_rgba(65,209,255,0.45)]")}>
-        {icon}
-      </div>
-      <span className="text-[11px] leading-none font-semibold text-center">
-        {label}
-      </span>
+      <div className={cn("h-6 w-6 flex items-center justify-center")}>{icon}</div>
+      <span className="text-[11px] leading-none font-semibold text-center">{label}</span>
     </button>
   );
 }
@@ -506,7 +448,7 @@ function DashNavItem({
   onClick,
   testId,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   isActive: boolean;
   onClick: () => void;
@@ -517,8 +459,8 @@ function DashNavItem({
       <button
         onClick={onClick}
         className={cn(
-          "h-[66px] w-[66px] -mt-8 rounded-full border-4 ring-2 ring-black/20 border-brand-bg bg-[#22c55e] text-white shadow-[0_10px_24px_rgba(0,0,0,0.45)] flex items-center justify-center transition-transform duration-200",
-          isActive ? "scale-105" : "hover:scale-[1.03]"
+          "h-[64px] w-[64px] -mt-8 rounded-full border-4 ring-1 ring-black/15 border-brand-bg bg-[#22c55e] text-white shadow-[0_8px_18px_rgba(0,0,0,0.32)] flex items-center justify-center transition-transform duration-200",
+          isActive ? "scale-105" : "hover:scale-[1.03]",
         )}
         data-testid={testId}
       >
@@ -532,43 +474,73 @@ function DashNavItem({
 }
 
 function MoreHub({
+  sessionCount,
+  goal,
   onOpenEvents,
   onOpenBike,
   onOpenStrava,
   onOpenSettings,
+  onOpenAccount,
 }: {
+  sessionCount: number;
+  goal?: GoalEvent;
   onOpenEvents: () => void;
   onOpenBike: () => void;
   onOpenStrava: () => void;
   onOpenSettings: () => void;
+  onOpenAccount: () => void;
 }) {
+  const [showAIBuilder, setShowAIBuilder] = useState(false);
+
   return (
     <div className="p-4 space-y-4" data-testid="more-view">
-      <h2 className="text-2xl font-bold text-brand-text">More</h2>
+      <h2 className="text-2xl font-semibold text-brand-text">More</h2>
       <p className="text-sm text-brand-muted leading-relaxed">
-        Extra tools and integrations, kept simple for everyday riders.
+        Secondary tools and settings in one place.
       </p>
+
+      <div className="glass-panel p-3 space-y-3">
+        <h3 className="text-sm font-semibold text-brand-text">Plan tools</h3>
+        <button
+          type="button"
+          onClick={() => setShowAIBuilder(true)}
+          className="w-full min-h-[48px] rounded-lg border border-brand-border/60 bg-brand-panel-2/50 px-3 py-2 text-left text-sm text-brand-text flex items-center gap-2"
+          data-testid="button-more-open-ai-builder"
+        >
+          <Sparkles size={16} className="text-brand-primary" />
+          Rebuild plan with AI
+        </button>
+        <PlanManager sessionCount={sessionCount} />
+      </div>
+
       <div className="glass-panel p-2 space-y-2">
         <MoreAction
           icon={<MountainSnow size={18} className="text-brand-primary" />}
           title="Events"
-          description="Goal event, countdown, and event intel."
+          description="Goal event and countdown."
           onClick={onOpenEvents}
           testId="button-more-events"
         />
         <MoreAction
           icon={<Wrench size={18} className="text-brand-primary" />}
           title="Bike"
-          description="Maintenance tracking and distance-based checks."
+          description="Maintenance and distance checks."
           onClick={onOpenBike}
           testId="button-more-bike"
         />
         <MoreAction
           icon={<Bike size={18} className="text-[#FC4C02]" />}
           title="Strava"
-          description="Connect, sync activities, and compare plan vs actual."
+          description="Connect and sync rides."
           onClick={onOpenStrava}
           testId="button-more-strava"
+        />
+        <MoreAction
+          icon={<User size={18} className="text-brand-primary" />}
+          title="Profile and account"
+          description="Subscription, help, logout."
+          onClick={onOpenAccount}
+          testId="button-more-account"
         />
         <MoreAction
           icon={<Settings size={18} className="text-brand-primary" />}
@@ -578,6 +550,16 @@ function MoreHub({
           testId="button-more-settings"
         />
       </div>
+
+      <div className="glass-panel p-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-brand-text">Notifications</h3>
+          <p className="text-xs text-brand-muted">Open reminders and alerts.</p>
+        </div>
+        <NotificationsCenter />
+      </div>
+
+      {showAIBuilder && <AIPlanBuilder onClose={() => setShowAIBuilder(false)} goal={goal} />}
     </div>
   );
 }
@@ -589,7 +571,7 @@ function MoreAction({
   onClick,
   testId,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description: string;
   onClick: () => void;
@@ -599,7 +581,7 @@ function MoreAction({
     <button
       type="button"
       onClick={onClick}
-      className="w-full min-h-[52px] rounded-xl border border-brand-border/60 bg-brand-panel-2/60 px-3 py-3 flex items-center gap-3 text-left"
+      className="w-full min-h-[52px] rounded-xl border border-brand-border/50 bg-brand-panel-2/45 px-3 py-3 flex items-center gap-3 text-left"
       data-testid={testId}
     >
       <span className="w-8 h-8 rounded-lg bg-brand-bg/60 border border-brand-border/50 flex items-center justify-center shrink-0">
