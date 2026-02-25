@@ -23,37 +23,18 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 const DAILY_QUOTES = [
-  { text: "The pain you feel today will be the strength you feel tomorrow.", author: "Arnold Schwarzenegger" },
-  { text: "It never gets easier, you just get faster.", author: "Greg LeMond" },
-  { text: "Suffer now and live the rest of your life as a champion.", author: "Muhammad Ali" },
-  { text: "The bicycle is the most civilized conveyance known to man.", author: "Iris Murdoch" },
-  { text: "Life is like riding a bicycle. To keep your balance, you must keep moving.", author: "Albert Einstein" },
-  { text: "Nothing compares to the simple pleasure of riding a bike.", author: "John F. Kennedy" },
-  { text: "Persistence can change failure into extraordinary achievement.", author: "Marv Levy" },
-  { text: "Don't count the days, make the days count.", author: "Muhammad Ali" },
-  { text: "When my legs hurt, I say: Shut up legs! Do what I tell you to do!", author: "Jens Voigt" },
-  { text: "Champions keep playing until they get it right.", author: "Billie Jean King" },
-  { text: "The only impossible journey is the one you never begin.", author: "Tony Robbins" },
-  { text: "Strength does not come from winning. It comes from the struggles.", author: "Mahatma Gandhi" },
-  { text: "A year from now you will wish you had started today.", author: "Karen Lamb" },
-  { text: "The hardest part is showing up. After that, the ride takes care of itself.", author: "Unknown" },
-  { text: "The mountains are calling and I must go.", author: "John Muir" },
-  { text: "Every ride is a chance to feel alive.", author: "Unknown" },
-  { text: "Success isn't always about greatness. It's about consistency.", author: "Dwayne Johnson" },
-  { text: "Sore today. Strong tomorrow.", author: "Unknown" },
-  { text: "Push yourself, because no one else is going to do it for you.", author: "Unknown" },
-  { text: "Ride as much or as little, as long or as short as you feel. But ride.", author: "Eddy Merckx" },
-  { text: "The best rides are the ones where you bite off much more than you can chew.", author: "Doug Bradbury" },
-  { text: "It's not about the bike.", author: "Lance Armstrong" },
-  { text: "Sweat is just fat crying.", author: "Unknown" },
-  { text: "Cycling is the new golf. It's the new networking.", author: "Patrick Dempsey" },
-  { text: "Ride your bike, ride your bike, ride your bike.", author: "Fausto Coppi" },
-  { text: "The will to win means nothing without the will to prepare.", author: "Juma Ikangaa" },
-  { text: "What doesn't kill you makes you stronger.", author: "Friedrich Nietzsche" },
-  { text: "When the spirits are low, when the day appears dark, just mount a bicycle.", author: "Arthur Conan Doyle" },
-  { text: "Somewhere behind the athlete you've become is the child who fell in love with the sport.", author: "Unknown" },
-  { text: "The real workout starts when you want to stop.", author: "Ronnie Coleman" },
-  { text: "Think of what it would mean to have that body, that health, that freedom.", author: "Unknown" },
+  { text: "Get back on the bike, one easy ride at a time.", author: "PeakReady" },
+  { text: "Build confidence by showing up, not by being perfect.", author: "PeakReady" },
+  { text: "Ride consistently and the progress will come.", author: "PeakReady" },
+  { text: "A short easy ride still counts.", author: "PeakReady" },
+  { text: "Your plan is here to support real life, not fight it.", author: "PeakReady" },
+  { text: "Start where you are today and keep it simple.", author: "PeakReady" },
+  { text: "Steady effort beats all-or-nothing effort.", author: "PeakReady" },
+  { text: "The goal is to feel better on the bike each week.", author: "PeakReady" },
+  { text: "Small steps build strong habits.", author: "PeakReady" },
+  { text: "Consistency builds momentum.", author: "PeakReady" },
+  { text: "Ride at a pace that lets you come back tomorrow.", author: "PeakReady" },
+  { text: "You are not behind. You are rebuilding.", author: "PeakReady" },
 ];
 
 function getDailyQuote() {
@@ -342,7 +323,7 @@ export function Dashboard({
       <div className="glass-panel p-6 shadow-[0_0_20px_rgba(189,52,254,0.15)] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-primary opacity-20 blur-3xl -mr-10 -mt-10 rounded-full" />
         <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold mb-1 relative z-10">
-          Weekly Progress
+          Ride Consistently
         </h3>
         <div className="flex items-end gap-2 mb-4 relative z-10">
           <span
@@ -379,7 +360,7 @@ export function Dashboard({
           <div className="absolute top-0 left-0 w-32 h-32 bg-gradient-primary opacity-10 blur-3xl -ml-10 -mt-10 rounded-full pointer-events-none" />
           <div className="flex justify-between items-center relative z-10">
             <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold flex items-center gap-1">
-              <Zap size={12} className="text-brand-primary" /> Readiness Score
+              <Zap size={12} className="text-brand-primary" /> Today's Readiness
             </h3>
             <div className="flex items-center gap-2">
               <button
@@ -388,7 +369,7 @@ export function Dashboard({
                 className="text-[10px] font-bold text-brand-primary uppercase tracking-widest hover:underline"
                 data-testid="button-readiness-info"
               >
-                How this is calculated
+                What this means
               </button>
               <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">
                 0-100
@@ -400,7 +381,7 @@ export function Dashboard({
               className="mt-2 text-[11px] text-brand-muted leading-relaxed relative z-10"
               data-testid="text-readiness-info"
             >
-              Readiness is driven mainly by fatigue (1 fresh, 10 exhausted). If a resting-HR baseline exists, today&apos;s RHR can nudge the score; treat it as a simple directional signal, not a precise performance prediction.
+              This score keeps things simple: it mainly uses fatigue (1 fresh, 10 exhausted). Resting heart rate can help refine it. Use it as a quick guide for whether to push, stay steady, or keep it easy.
             </p>
           )}
           <div className="mt-4 flex items-center justify-between relative z-10">
@@ -420,10 +401,10 @@ export function Dashboard({
               </span>
               <span className="text-xs uppercase font-bold text-brand-muted tracking-widest">
                 {readinessScore >= 80
-                  ? "Peak"
+                  ? "Build confidence"
                   : readinessScore >= 50
-                    ? "Steady"
-                    : "Recover"}
+                    ? "Ride steady"
+                    : "Easy day"}
               </span>
             </div>
             {readiness.usesRhrBaseline && readiness.baselineRhr !== null ? (
@@ -441,8 +422,7 @@ export function Dashboard({
         <div className="glass-panel p-5 flex flex-col justify-between col-span-2 shadow-[0_0_15px_rgba(189,52,254,0.05)]">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold flex items-center gap-1">
-              <ActivityIcon size={12} className="text-brand-primary" /> Plan vs
-              Timeline
+              <ActivityIcon size={12} className="text-brand-primary" /> Get Back on the Bike
             </h3>
             <div
               className={cn(
@@ -473,7 +453,7 @@ export function Dashboard({
             </div>
             <div>
               <div className="flex justify-between text-[10px] uppercase font-bold text-brand-muted mb-1">
-                <span>Sessions Done</span>
+              <span>Rides Completed</span>
                 <span className="text-brand-primary drop-shadow-[0_0_5px_rgba(65,209,255,0.6)]">
                   {statusInfo.sessionProgress}%
                 </span>
@@ -491,14 +471,14 @@ export function Dashboard({
         <div className="glass-panel p-5 col-span-2 space-y-3 border-brand-border/60">
           <div className="flex items-center justify-between">
             <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold">
-              Zone Progression (Last 4 Weeks)
+              Ride Consistency (Last 4 Weeks)
             </h3>
             <span className="text-[10px] text-brand-muted uppercase tracking-widest">
-              Beginner-friendly score
+              Simple score
             </span>
           </div>
           <p className="text-[11px] text-brand-muted leading-relaxed">
-            Higher scores mean you are consistently completing rides in that zone at manageable effort.
+            Higher scores mean you are riding that effort level more consistently and at a manageable pace.
           </p>
           <div className="space-y-2">
             {zoneProgress.map((item) => (
@@ -523,14 +503,14 @@ export function Dashboard({
         <div className="glass-panel p-5 col-span-2 space-y-3 border-brand-border/60">
           <div className="flex items-center justify-between">
             <h3 className="text-brand-muted text-[10px] uppercase tracking-widest font-bold">
-              Skills Confidence Track
+              Build Confidence Check-In
             </h3>
             <span className="text-[10px] text-brand-muted uppercase tracking-widest">
               1 = not confident, 5 = very confident
             </span>
           </div>
           <p className="text-[11px] text-brand-muted leading-relaxed">
-            Quick weekly check-in for off-road skills. This helps keep your plan realistic for your first event.
+            Quick weekly check-in for trail skills. This helps keep your plan simple, realistic, and confidence-building.
           </p>
 
           <SkillInputRow
@@ -558,7 +538,7 @@ export function Dashboard({
             className="w-full mt-1 py-2 rounded-lg bg-gradient-secondary text-brand-bg text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
             data-testid="button-save-skills-progress"
           >
-            {isSavingSkills ? "Saving..." : "Save Skills Check-In"}
+            {isSavingSkills ? "Saving..." : "Save Confidence Check-In"}
           </button>
         </div>
 

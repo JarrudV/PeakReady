@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  updateUserProfile(id: string, updates: Pick<UpsertUser, "age" | "firstName" | "lastName">): Promise<User | undefined>;
 }
 
 import {
@@ -24,6 +25,11 @@ class AuthStorage implements IAuthStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  private stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+    const entries = Object.entries(obj).filter(([, value]) => value !== undefined);
+    return Object.fromEntries(entries) as Partial<T>;
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
@@ -56,10 +62,27 @@ class AuthStorage implements IAuthStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          ...userData,
+          ...this.stripUndefined(userData),
           updatedAt: new Date(),
         },
       })
+      .returning();
+    return user;
+  }
+
+  async updateUserProfile(
+    id: string,
+    updates: Pick<UpsertUser, "age" | "firstName" | "lastName">,
+  ): Promise<User | undefined> {
+    const safeUpdates = this.stripUndefined({
+      ...updates,
+      updatedAt: new Date(),
+    });
+
+    const [user] = await db
+      .update(users)
+      .set(safeUpdates)
+      .where(eq(users.id, id))
       .returning();
     return user;
   }

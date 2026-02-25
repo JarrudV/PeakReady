@@ -149,25 +149,25 @@ function buildMarathonPlan(startDate: Date): InsertSession[] {
         return [
           { day: "Mon", type: "Strength", description: "Core & Stability", minutes: 30, strength: true },
           { day: "Tue", type: "Ride", description: "Endurance Ride", minutes: 45 + week * 5, zone: "Z2" },
-          { day: "Thu", type: "Ride", description: "Tempo Ride", minutes: 40 + week * 5, zone: "Z3" },
+          { day: "Thu", type: "Ride", description: "Steady Effort Ride", minutes: 40 + week * 5, zone: "Z3" },
           { day: "Sat", type: "Long Ride", description: "Weekend Long Ride", minutes: 90 + week * 15, zone: "Z2", elevation: `${600 + week * 100}m` },
         ];
       }
 
       if (isBuild) {
         return [
-          { day: "Mon", type: "Strength", description: "Explosive Strength", minutes: 35, strength: true },
-          { day: "Tue", type: "Ride", description: "Sweet Spot Intervals", minutes: 60 + (week - 4) * 5, zone: "Z3-Z4" },
-          { day: "Thu", type: "Ride", description: "Threshold Climbs", minutes: 50 + (week - 4) * 5, zone: "Z4", elevation: `${800 + (week - 4) * 150}m` },
+          { day: "Mon", type: "Strength", description: "Strength + Stability", minutes: 35, strength: true },
+          { day: "Tue", type: "Ride", description: "Steady Hard Intervals", minutes: 60 + (week - 4) * 5, zone: "Z3-Z4" },
+          { day: "Thu", type: "Ride", description: "Hard Climb Repeats", minutes: 50 + (week - 4) * 5, zone: "Z4", elevation: `${800 + (week - 4) * 150}m` },
           { day: "Sat", type: "Long Ride", description: "Endurance + Climbs", minutes: 120 + (week - 4) * 15, zone: "Z2-Z3", elevation: `${1000 + (week - 4) * 200}m` },
         ];
       }
 
       return [
-        { day: "Mon", type: "Strength", description: "Power & Plyometrics", minutes: 40, strength: true },
-        { day: "Tue", type: "Ride", description: "VO2max Intervals", minutes: 60, zone: "Z4-Z5" },
-        { day: "Thu", type: "Ride", description: "Race Simulation", minutes: 70, zone: "Z3-Z5", elevation: "1500m+" },
-        { day: "Sat", type: "Long Ride", description: "Race Rehearsal", minutes: 180, zone: "Z2-Z4", elevation: "1800m+" },
+        { day: "Mon", type: "Strength", description: "Strength + Bike Power", minutes: 40, strength: true },
+        { day: "Tue", type: "Ride", description: "Short Hard Intervals", minutes: 60, zone: "Z4-Z5" },
+        { day: "Thu", type: "Ride", description: "Event Practice Ride", minutes: 70, zone: "Z3-Z5", elevation: "1500m+" },
+        { day: "Sat", type: "Long Ride", description: "Long Event Practice Ride", minutes: 180, zone: "Z2-Z4", elevation: "1800m+" },
       ];
     },
   });
@@ -187,9 +187,9 @@ function buildStageRacePlan(startDate: Date): InsertSession[] {
       if (isTaper) {
         return [
           { day: "Mon", type: "Strength", description: "Mobility + Core Tune-up", minutes: 20, strength: true },
-          { day: "Tue", type: "Ride", description: "Openers", minutes: 35, zone: "Z2-Z3" },
-          { day: "Thu", type: "Ride", description: "Short Race Primers", minutes: 40, zone: "Z3-Z4" },
-          { day: "Sat", type: "Long Ride", description: "Back-to-Back Stage Simulation", minutes: 120, zone: "Z2-Z3", elevation: "900m" },
+          { day: "Tue", type: "Ride", description: "Leg Wake-Up Ride", minutes: 35, zone: "Z2-Z3" },
+          { day: "Thu", type: "Ride", description: "Short Event Prep Ride", minutes: 40, zone: "Z3-Z4" },
+          { day: "Sat", type: "Long Ride", description: "Back-to-Back Event Practice", minutes: 120, zone: "Z2-Z3", elevation: "900m" },
         ];
       }
 
@@ -203,22 +203,22 @@ function buildStageRacePlan(startDate: Date): InsertSession[] {
 
       if (isPeakBlock) {
         return [
-          { day: "Mon", type: "Strength", description: "Explosive Strength", minutes: 35, strength: true },
-          { day: "Tue", type: "Ride", description: "VO2 Hill Repeats", minutes: 75, zone: "Z4-Z5", elevation: "900m" },
-          { day: "Wed", type: "Ride", description: "Tempo Endurance", minutes: 60, zone: "Z3" },
-          { day: "Thu", type: "Ride", description: "Threshold Climbs", minutes: 80, zone: "Z4", elevation: "1200m" },
-          { day: "Sat", type: "Long Ride", description: "Stage Simulation Day 1", minutes: 180, zone: "Z2-Z4", elevation: "1700m+" },
-          { day: "Sun", type: "Long Ride", description: "Stage Simulation Day 2", minutes: 150, zone: "Z2-Z3", elevation: "1300m+" },
+          { day: "Mon", type: "Strength", description: "Strength + Stability", minutes: 35, strength: true },
+          { day: "Tue", type: "Ride", description: "Short Hard Hill Repeats", minutes: 75, zone: "Z4-Z5", elevation: "900m" },
+          { day: "Wed", type: "Ride", description: "Steady Endurance Ride", minutes: 60, zone: "Z3" },
+          { day: "Thu", type: "Ride", description: "Hard Climb Repeats", minutes: 80, zone: "Z4", elevation: "1200m" },
+          { day: "Sat", type: "Long Ride", description: "Event Practice Day 1", minutes: 180, zone: "Z2-Z4", elevation: "1700m+" },
+          { day: "Sun", type: "Long Ride", description: "Event Practice Day 2", minutes: 150, zone: "Z2-Z3", elevation: "1300m+" },
         ];
       }
 
       return [
-        { day: "Mon", type: "Strength", description: "Core + Posterior Chain", minutes: 35, strength: true },
-        { day: "Tue", type: "Ride", description: "Sweet Spot Intervals", minutes: 60 + week * 2, zone: "Z3-Z4" },
+        { day: "Mon", type: "Strength", description: "Core + Hip Support", minutes: 35, strength: true },
+        { day: "Tue", type: "Ride", description: "Steady Hard Intervals", minutes: 60 + week * 2, zone: "Z3-Z4" },
         { day: "Wed", type: "Ride", description: "Aerobic Endurance", minutes: 50 + week * 2, zone: "Z2" },
-        { day: "Thu", type: "Ride", description: "Climbing Tempo", minutes: 65 + week * 2, zone: "Z3-Z4", elevation: `${700 + week * 60}m` },
-        { day: "Sat", type: "Long Ride", description: "Stage Simulation Day 1", minutes: 130 + week * 5, zone: "Z2-Z3", elevation: `${900 + week * 80}m` },
-        { day: "Sun", type: "Long Ride", description: "Stage Simulation Day 2", minutes: 95 + week * 4, zone: "Z2", elevation: `${700 + week * 60}m` },
+        { day: "Thu", type: "Ride", description: "Steady Climbing Ride", minutes: 65 + week * 2, zone: "Z3-Z4", elevation: `${700 + week * 60}m` },
+        { day: "Sat", type: "Long Ride", description: "Event Practice Day 1", minutes: 130 + week * 5, zone: "Z2-Z3", elevation: `${900 + week * 80}m` },
+        { day: "Sun", type: "Long Ride", description: "Event Practice Day 2", minutes: 95 + week * 4, zone: "Z2", elevation: `${700 + week * 60}m` },
       ];
     },
   });
@@ -237,7 +237,7 @@ function buildBaseResetPlan(startDate: Date): InsertSession[] {
         return [
           { day: "Mon", type: "Strength", description: "Mobility + Core", minutes: 20, strength: true },
           { day: "Tue", type: "Ride", description: "Steady Endurance Ride", minutes: 55, zone: "Z2" },
-          { day: "Thu", type: "Ride", description: "Progressive Tempo", minutes: 50, zone: "Z2-Z3" },
+          { day: "Thu", type: "Ride", description: "Progressive Steady Ride", minutes: 50, zone: "Z2-Z3" },
           { day: "Sat", type: "Long Ride", description: "Confidence Long Ride", minutes: 120, zone: "Z2", elevation: "600m" },
         ];
       }
@@ -251,9 +251,9 @@ function buildBaseResetPlan(startDate: Date): InsertSession[] {
       }
 
       return [
-        { day: "Mon", type: "Strength", description: "Foundational Strength", minutes: 25, strength: true },
+        { day: "Mon", type: "Strength", description: "Strength Basics", minutes: 25, strength: true },
         { day: "Tue", type: "Ride", description: "Aerobic Endurance", minutes: 45 + week * 4, zone: "Z2" },
-        { day: "Thu", type: "Ride", description: "Tempo Intro", minutes: 40 + week * 4, zone: "Z2-Z3" },
+        { day: "Thu", type: "Ride", description: "Steady Ride Intro", minutes: 40 + week * 4, zone: "Z2-Z3" },
         { day: "Sat", type: "Long Ride", description: "Low-Intensity Long Ride", minutes: 85 + week * 8, zone: "Z2", elevation: `${350 + week * 60}m` },
       ];
     },

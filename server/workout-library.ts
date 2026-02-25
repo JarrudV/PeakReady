@@ -6,50 +6,50 @@ export interface WorkoutTemplate {
 export const workoutLibrary: Record<string, string> = {
   "strength-a": `## Strength + Core A (40 mins)
 
-**Goal:** Build durability for climbing and protect knees and lower back.
+**Goal:** Build everyday leg and core strength so riding feels steadier and easier.
 
 ### Warm Up (5 mins)
-- Bodyweight squats x 10
-- Glute bridges x 12
-- Dead bugs x 10 per side
-- Hip hinge drill x 10
+- Chair squats x 8
+- Glute bridges x 10
+- Step-back lunges x 6 per side
+- Easy hip hinge practice x 8
 
 ### Main Set (30 mins)
 Do 3 rounds, rest 60 seconds between movements:
-- Goblet squat (or bodyweight) x 10
-- Reverse lunge x 8 per leg
-- Romanian deadlift with backpack or dumbbells x 10
+- Chair squat x 10
+- Step-back lunge x 8 per leg
+- Backpack hip hinge x 10
 - Calf raises x 15
-- Plank 45 seconds
-- Side plank 30 seconds per side
+- Front plank 30-40 seconds
+- Side plank 20-30 seconds per side
 
 ### Cool Down (5 mins)
 - Hip flexor stretch 60 seconds per side
 - Hamstring stretch 60 seconds
-- Thoracic rotation 10 per side
+- Gentle back rotation 8 per side
 
 ### Equipment
-- Dumbbell or kettlebell or a loaded backpack
-- Mat`,
+- Sturdy chair or bench
+- Light backpack (optional)
+- Mat (optional)`,
 
   "strength-b": `## Strength + Core B (45 mins)
 
-**Goal:** Improve climbing power and stability.
+**Goal:** Build steady climbing strength and better balance without high-impact moves.
 
 ### Warm Up (5 mins)
 - Step ups x 10 per leg
 - Air squats x 10
-- Shoulder openers x 10
+- Calf raises x 12
 
 ### Main Set (35 mins)
-4 rounds:
+3 rounds:
 - Step ups (chair/box) x 10 per leg
-- Split squat x 8 per leg
-- Single leg RDL (light) x 8 per leg
-- Push ups x 10
-- Hollow hold 25 seconds
+- Split squat hold 20 seconds per leg
+- Wall push ups x 10
+- Back-lying arm-and-leg reach x 8 per side
 
-Rest 60–90 seconds between rounds.
+Rest 60-90 seconds between rounds.
 
 ### Cool Down
 - Quad stretch 60 seconds per leg
@@ -57,27 +57,26 @@ Rest 60–90 seconds between rounds.
 
 ### Equipment
 - Chair or box for step ups
-- Light dumbbell (optional)
-- Mat`,
+- Mat (optional)`,
 
-  "strength-power": `## Power & Plyometrics (40 mins)
+  "strength-power": `## Strength + Bike Power (Beginner Friendly) (40 mins)
 
-**Goal:** Build explosive power for race-day efforts and technical sections.
+**Goal:** Build controlled pedal power and confidence with simple low-impact movements.
 
 ### Warm Up (5 mins)
-- Jumping jacks x 20
+- March in place x 40 seconds
 - Bodyweight squats x 10
-- Leg swings x 10 per side
-- High knees x 20
+- Leg swings x 8 per side
+- Step ups x 6 per side
 
 ### Main Set (30 mins)
-4 rounds:
-- Box jumps (or squat jumps) x 8
-- Bulgarian split squat x 8 per leg
+3 rounds:
+- Step ups x 8 per side
+- Split squat hold 20 seconds per side
 - Single leg calf raises x 12 per side
-- Medicine ball slams (or explosive push ups) x 8
-- Hollow body hold 30 seconds
-- Mountain climbers x 20
+- Wall push ups x 10
+- Front plank hold 30 seconds
+- Easy mountain climbers x 12 per side
 
 Rest 90 seconds between rounds.
 
@@ -88,9 +87,7 @@ Rest 90 seconds between rounds.
 
 ### Equipment
 - Box or step
-- Medicine ball (optional)
-- Mat`,
-
+- Mat (optional)`,
   "easy-z2": `## Easy Z2 Ride
 
 **Goal:** Build aerobic base and comfort on the bike.
@@ -178,124 +175,124 @@ Complete 3-4 rounds on trail, pump track, or safe open area:
 
 ### Notes
 - Keep skill reps controlled: quality over speed
-- Stay below threshold; this is technical learning, not a max effort day
+- Stay below hard effort; this is technical learning, not a max effort day
 - Log one skill cue that improved today`,
 
-  "sweet-spot": `## Sweet Spot Intervals
+  "sweet-spot": `## Steady Hard Intervals
 
-**Goal:** Maximize training stimulus with manageable fatigue. The best bang for your buck.
+**Goal:** Build stronger steady riding without overcomplicating the workout.
 
 ### Warm Up (15 mins)
-Z1–Z2 ramp up. Include 3 x 20 second sprints with 40 second rest.
+Z1-Z2 ramp up. Include 3 x 20 second spin-ups with 40 second rest.
 
 ### Main Set
-- 3–4 x 10 min intervals at **Z3–Z4** (sweet spot = ~88–93% FTP feel)
+- 3-4 x 10 min intervals at **Z3-Z4** (comfortably hard effort)
 - Recovery: 5 min easy spinning between intervals
 - Seated for at least half of each interval
-- Cadence: 80–90 RPM
+- Cadence: 80-90 RPM
 
 ### Cool Down (10 mins)
-Easy Z1 spin. Let HR drop fully.
+Easy Z1 spin. Let heart rate drop fully.
 
 ### Notes
-- Sweet spot should feel like "comfortably uncomfortable"
-- Not gasping, not easy — right in between
+- This should feel steady and controlled, not all-out
+- Not gasping, not easy - right in between
 - Focus on even pacing through each interval`,
 
-  "threshold-climbs": `## Threshold Climbs
+  "threshold-climbs": `## Hard Climb Repeats
 
-**Goal:** Build race-specific climbing power at or near lactate threshold.
+**Goal:** Build climbing strength and confidence for longer hills.
 
 ### Warm Up (15 mins)
-Z1–Z2 ramp. Include 2 x 1 min Z3 pickups.
+Z1-Z2 ramp. Include 2 x 1 min Z3 pickups.
 
 ### Main Set
-- 4 x 5 min climbs at **Zone 4** (threshold)
-- Recovery: 3 min easy spinning/descend between efforts
+- 4 x 5 min climbs at **Zone 4** (hard but repeatable)
+- Recovery: 3 min easy spinning/descending between efforts
 - Stay seated for first 3 mins of each rep
 - Stand for final 2 mins if needed
-- Cadence: 65–80 RPM on climbs
+- Cadence: 65-80 RPM on climbs
 
 ### Cool Down (10 mins)
 Easy spin on flat terrain. Deep breathing.
 
 ### Notes
-- This should hurt but be sustainable
-- If you blow up on rep 3, the pace was too hard
+- This should feel hard but manageable
+- If rep 3 falls apart, start a little easier next time
 - Target consistent effort across all reps`,
 
-  "vo2max": `## VO2max Intervals
+  "vo2max": `## Short Hard Intervals
 
-**Goal:** Push your ceiling higher. Improve max aerobic capacity for race-day surges.
+**Goal:** Build your ability to handle short hard efforts, then recover smoothly.
 
 ### Warm Up (15 mins)
-Z1–Z2 ramp with 3 x 30 second hard efforts, 30 seconds rest.
+Z1-Z2 ramp with 3 x 30 second hard efforts, 30 seconds easy.
 
 ### Main Set
-- 5 x 3 min at **Zone 4–5** (very hard, can barely talk)
+- 5 x 3 min at **Zone 4-5** (very hard, can barely talk)
 - Recovery: 3 min easy spinning between efforts
-- Go hard but sustainable — aim to complete all 5 reps
-- Cadence: 90–100+ RPM (high cadence)
+- Go hard but controlled so you can complete all 5 reps
+- Cadence: 90-100+ RPM
 
 ### Cool Down (10 mins)
-Very easy Z1 spin. Extended cool down recommended.
+Very easy Z1 spin.
 
 ### Notes
-- This is the hardest session of the week
-- If you can do 6 reps easily, go harder
+- Keep this session short and focused
+- If form fades, reduce pace slightly
 - Hydrate well before and during`,
 
-  "race-simulation": `## Race Simulation
+  "race-simulation": `## Event Practice Ride
 
-**Goal:** Practice race pacing, nutrition, and mental toughness on race-like terrain.
+**Goal:** Practice steady pacing and fueling on terrain similar to your event.
 
 ### Warm Up (15 mins)
-Z1–Z2 progressive ramp. Mental rehearsal of race segments.
+Z1-Z2 progressive ramp.
 
 ### Main Set
 - Ride a route with climbs similar to your target event
 - Alternate between:
-  - Z3 on climbs (sustained power)
-  - Z4 surges (1–2 min) on steep sections
+  - Z3 on climbs (steady effort)
+  - Z4 surges (1-2 min) on steeper sections
   - Z2 recovery on flats/descents
-- Practice race nutrition: eat/drink on schedule
-- Practice technical sections at race pace
+- Practice event-day fueling: eat/drink on schedule
+- Ride technical sections with smooth control
 
 ### Cool Down (10 mins)
 Easy Z1 spin. Full body stretch after.
 
 ### Notes
-- This simulates race effort — don't go all out
+- This is event practice - do not go all-out
 - Focus on pacing: start conservative, build effort
-- Practice eating while riding at tempo`,
+- Practice eating while riding at steady effort`,
 
-  "race-rehearsal": `## Race Rehearsal (Long)
+  "race-rehearsal": `## Long Event Practice Ride
 
-**Goal:** Full dress rehearsal. Simulate race duration, fueling, pacing, and mental strategy.
+**Goal:** Practice a long ride day with simple pacing, fueling, and comfort checks.
 
 ### Warm Up (20 mins)
-Z1–Z2 progressive ramp. Eat pre-ride meal 2–3 hours before.
+Z1-Z2 progressive ramp. Eat a normal pre-ride meal 2-3 hours before.
 
 ### Main Set
-- Ride at **race duration** or close to it
-- Mostly Z2, with race-specific blocks:
+- Ride close to your event duration
+- Mostly Z2, with event-style blocks:
   - From Week 5+: 2 x 15 min at Z3 with 10 min easy between
-  - Practice climbing at target race effort
-  - Practice descending at race speed
-- Fuel every 30–45 mins (gels, bars, real food)
-- Hydrate every 15–20 mins
+  - Practice climbing at steady effort
+  - Practice descending with control
+- Fuel every 30-45 mins
+- Hydrate every 15-20 mins
 
 ### Cool Down (15 mins)
 Easy Z1 spin. Extended stretching session.
 
 ### Notes
-- Wear race kit, use race setup
-- Practice everything: nutrition, pacing, mental cues
-- Note what works and what doesn't in your session notes`,
+- Wear the setup you plan to use on event day
+- Practice your plan: fueling, pacing, and simple cues
+- Note what works and what does not in your session notes`,
 
   "long-ride": `## Long Ride
 
-**Goal:** Race durability. Fueling practice. Pacing discipline.
+**Goal:** Build long-ride confidence with steady effort and good fueling habits.
 
 ### Rules
 - Mostly **Zone 2** — do not smash it
@@ -422,7 +419,7 @@ export function getWorkoutDetails(type: string, description: string, week: numbe
   const typeLower = type.toLowerCase();
 
   if (typeLower === "strength" || descLower.includes("strength") || descLower.includes("core")) {
-    if (descLower.includes("power") || descLower.includes("plyometric") || descLower.includes("explosive")) {
+    if (descLower.includes("power") || descLower.includes("explosive")) {
       return workoutLibrary["strength-power"];
     }
     if (week % 2 === 0) {
@@ -436,9 +433,24 @@ export function getWorkoutDetails(type: string, description: string, week: numbe
   if (descLower.includes("light interval")) return workoutLibrary["light-intervals"];
   if (descLower.includes("shakeout")) return workoutLibrary["shakeout-ride"];
 
-  if (descLower.includes("vo2max") || descLower.includes("vo2")) return workoutLibrary["vo2max"];
-  if (descLower.includes("race simulation")) return workoutLibrary["race-simulation"];
-  if (descLower.includes("race rehearsal")) return workoutLibrary["race-rehearsal"];
+  if (
+    descLower.includes("short hard interval") ||
+    descLower.includes("short hard hill") ||
+    descLower.includes("vo2max") ||
+    descLower.includes("vo2")
+  ) {
+    return workoutLibrary["vo2max"];
+  }
+  if (descLower.includes("event practice ride") || descLower.includes("race simulation")) {
+    return workoutLibrary["race-simulation"];
+  }
+  if (
+    descLower.includes("long event practice ride") ||
+    descLower.includes("event practice day") ||
+    descLower.includes("race rehearsal")
+  ) {
+    return workoutLibrary["race-rehearsal"];
+  }
   if (
     descLower.includes("skill") ||
     descLower.includes("handling") ||
@@ -447,9 +459,18 @@ export function getWorkoutDetails(type: string, description: string, week: numbe
   ) {
     return workoutLibrary["skills-cadence"];
   }
-  if (descLower.includes("sweet spot")) return workoutLibrary["sweet-spot"];
-  if (descLower.includes("threshold") && descLower.includes("climb")) return workoutLibrary["threshold-climbs"];
-  if (descLower.includes("tempo")) return workoutLibrary["tempo-ride"];
+  if (descLower.includes("steady hard interval") || descLower.includes("sweet spot")) {
+    return workoutLibrary["sweet-spot"];
+  }
+  if (
+    (descLower.includes("hard") && descLower.includes("climb")) ||
+    (descLower.includes("threshold") && descLower.includes("climb"))
+  ) {
+    return workoutLibrary["threshold-climbs"];
+  }
+  if (descLower.includes("steady effort") || descLower.includes("steady climb") || descLower.includes("tempo")) {
+    return workoutLibrary["tempo-ride"];
+  }
 
   if (typeLower === "long ride") {
     if (descLower.includes("easy long")) return workoutLibrary["easy-long-ride"];
@@ -501,3 +522,4 @@ function zoneInfo(type: string): string {
 - Rest between sets as needed
 - Quality over quantity`;
 }
+

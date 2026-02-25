@@ -29,7 +29,7 @@ export function NewRiderOnboarding({
             New Rider Guide
           </DialogTitle>
           <DialogDescription className="text-brand-muted">
-            Built for couch-to-first-event riders. Keep it simple: follow the plan, log how you feel, and stay consistent.
+            Built for everyday riders returning after time away. Keep it simple: get back on the bike, build confidence, and ride consistently.
           </DialogDescription>
         </DialogHeader>
 
@@ -37,22 +37,22 @@ export function NewRiderOnboarding({
           <GuideCard
             icon={<Gauge size={14} className="text-brand-primary" />}
             title="Dashboard"
-            text="Readiness is a simple daily signal. Fatigue drives it most. Use it to decide if today should be normal or easier."
+            text="Readiness is a simple daily signal. Use it to choose a steady day or an easier day with confidence."
           />
           <GuideCard
             icon={<CalendarCheck2 size={14} className="text-brand-secondary" />}
             title="Plan"
-            text="Open each session card for purpose, workout steps, and notes. If life gets busy, use easier or shorter options and keep moving."
+            text="Open each session card for simple steps. If life gets busy, choose an easier or shorter option and keep momentum."
           />
           <GuideCard
             icon={<Activity size={14} className="text-brand-success" />}
             title="Metrics"
-            text="Log fatigue daily (1 fresh, 10 exhausted). Resting HR helps spot recovery trends if you log it regularly."
+            text="Log fatigue (1 fresh, 10 exhausted). This helps your plan stay realistic and sustainable."
           />
           <GuideCard
             icon={<Mountain size={14} className="text-brand-warning" />}
             title="Events and Strava"
-            text="Set your first event target and sync rides with Strava. The app compares planned vs actual so you can adjust early."
+            text="Set your event target and sync rides with Strava. You can quickly see what is done and what to adjust."
           />
         </div>
 
@@ -61,7 +61,7 @@ export function NewRiderOnboarding({
             First Week Checklist
           </p>
           <p className="text-xs text-brand-text">1. Set your event date and distance.</p>
-          <p className="text-xs text-brand-text">2. Complete at least 3 sessions, even if short.</p>
+          <p className="text-xs text-brand-text">2. Complete at least 3 sessions, even if they are short.</p>
           <p className="text-xs text-brand-text">3. Log fatigue after each training day.</p>
           <p className="text-xs text-brand-text">4. Review your readiness before hard sessions.</p>
         </div>

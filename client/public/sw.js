@@ -1,8 +1,17 @@
-const SW_VERSION = "v2";
+const SW_VERSION = "v3";
 const SHELL_CACHE = `peakready-shell-${SW_VERSION}`;
 const API_CACHE = `peakready-api-${SW_VERSION}`;
 
-const SHELL_ASSETS = ["/index.html", "/manifest.json", "/favicon.png", "/icon-192.png", "/icon-512.png"];
+const SHELL_ASSETS = [
+  "/index.html",
+  "/manifest.json",
+  "/favicon.png",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-192-maskable.png",
+  "/icon-512.png",
+  "/icon-512-maskable.png",
+];
 const OFFLINE_API_PATHS = new Set(["/api/sessions", "/api/metrics"]);
 const API_CACHE_ALLOWLIST = [
   "/api/sessions",

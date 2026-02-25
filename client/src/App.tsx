@@ -13,6 +13,8 @@ import {
   User,
   Settings,
   Bike,
+  MoreHorizontal,
+  ChevronRight,
 } from "lucide-react";
 import { Dashboard } from "@/pages/dashboard";
 import { TrainingPlan } from "@/pages/training-plan";
@@ -42,7 +44,7 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 
-type Tab = "dashboard" | "plan" | "coach" | "metrics" | "service" | "events" | "strava";
+type Tab = "dashboard" | "plan" | "coach" | "metrics" | "service" | "events" | "strava" | "more";
 
 function MainApp() {
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
@@ -194,6 +196,15 @@ function MainApp() {
 
   const subscriptionTier = subscriptionTierSetting?.value === "pro" ? "pro" : "free";
   const billingCycle = subscriptionBillingSetting?.value === "annual" ? "annual" : "monthly";
+  const riderDisplayName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+    user?.email ||
+    "Rider";
+  const isMoreActive =
+    activeTab === "more" ||
+    activeTab === "events" ||
+    activeTab === "service" ||
+    activeTab === "strava";
 
   const handleSelectPlan = async (tier: "free" | "pro", cycle: "monthly" | "annual") => {
     setPlanSaving(true);
@@ -265,53 +276,71 @@ function MainApp() {
   }
 
   return (
-    <div className="min-h-screen text-brand-text font-sans pb-24">
-      <header className="glass-panel rounded-none border-x-0 border-t-0 p-4 z-50 flex items-center justify-between">
-        <OfflineIndicator />
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg overflow-hidden border border-brand-border/60 bg-brand-panel-2">
-            <img
-              src="/favicon.png"
-              alt="PeakReady logo"
-              className="w-full h-full object-cover"
-              data-testid="img-app-logo"
-            />
+    <div className="min-h-screen text-brand-text font-sans overflow-x-hidden pb-[calc(env(safe-area-inset-bottom,0px)+7rem)]">
+      <header className="glass-panel rounded-none border-x-0 border-t-0 pt-safe-top px-safe pb-4 z-50">
+        <div className="mobile-shell flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              onClick={() => setAccountOpen(true)}
+              className="flex-1 min-w-0 overflow-hidden flex items-center gap-3 rounded-xl border border-brand-border bg-brand-panel-2 px-2.5 py-2 text-left"
+              title="Account"
+              data-testid="button-open-account"
+            >
+              <div className="w-11 h-11 rounded-full overflow-hidden border border-brand-border/70 bg-brand-panel-2 shrink-0 flex items-center justify-center">
+                {user?.profileImageUrl ? (
+                  <img
+                    src={user.profileImageUrl}
+                    alt=""
+                    className="w-11 h-11 rounded-full object-cover"
+                    data-testid="img-user-avatar"
+                  />
+                ) : (
+                  <User size={18} />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] tracking-wide text-brand-muted truncate">Signed in as</p>
+                <p className="text-sm font-semibold truncate">{riderDisplayName}</p>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <NotificationsCenter />
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="w-11 h-11 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors bg-brand-panel-2 border border-brand-border"
+                title="Settings"
+                data-testid="button-open-settings"
+              >
+                <Settings size={18} />
+              </button>
+            </div>
           </div>
-          <h1 className="text-xl font-bold tracking-tight" data-testid="text-app-title">
-            Peak<span className="text-gradient-primary">Ready</span>
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <NotificationsCenter />
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors bg-brand-panel-2 border border-brand-border"
-            title="Settings"
-            data-testid="button-open-settings"
-          >
-            <Settings size={16} />
-          </button>
-          <button
-            onClick={() => setAccountOpen(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-brand-muted hover:text-brand-text transition-colors overflow-hidden border border-brand-border bg-brand-panel-2"
-            title="Account"
-            data-testid="button-open-account"
-          >
-            {user?.profileImageUrl ? (
+
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl overflow-hidden border border-brand-border/60 bg-brand-panel-2 shrink-0">
               <img
-                src={user.profileImageUrl}
-                alt=""
-                className="w-9 h-9 rounded-full object-cover"
-                data-testid="img-user-avatar"
+                src="/favicon.png"
+                alt="PeakReady logo"
+                className="w-full h-full object-cover"
+                data-testid="img-app-logo"
               />
-            ) : (
-              <User size={18} />
-            )}
-          </button>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[22px] font-bold tracking-tight leading-tight truncate" data-testid="text-app-title">
+                Peak<span className="text-gradient-primary">Ready</span>
+              </h1>
+              <p className="text-sm text-brand-muted leading-snug">Get back on the bike. Build confidence. Ride consistently.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <OfflineIndicator />
+          </div>
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto w-full pb-4 pt-4 relative">
+      <main className="mobile-shell w-full px-safe sm:px-4 pb-4 pt-5 relative">
         {activeTab === "dashboard" && (
           <Dashboard
             sessions={sessions}
@@ -339,26 +368,27 @@ function MainApp() {
         {activeTab === "strava" && (
           <StravaDashboard />
         )}
+        {activeTab === "more" && (
+          <MoreHub
+            onOpenEvents={() => setActiveTab("events")}
+            onOpenBike={() => setActiveTab("service")}
+            onOpenStrava={() => setActiveTab("strava")}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
       </main>
 
-      <nav className="fixed bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 z-30 px-3 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
-        <div className="mx-auto grid w-full max-w-lg grid-cols-[1fr_1fr_1fr_auto_1fr_1fr_1fr] items-end gap-x-1">
+      <nav className="fixed inset-x-0 bottom-0 w-full glass-panel rounded-none border-x-0 border-b-0 z-30 px-safe pt-2.5 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] shadow-[0_-8px_30px_rgba(0,0,0,0.5)]">
+        <div className="mobile-shell grid w-full grid-cols-[1fr_1fr_auto_1fr_1fr] items-end gap-x-1.5">
           <NavItem
-            icon={<MountainSnow size={23} />}
-            label="Events"
-            isActive={activeTab === "events"}
-            onClick={() => setActiveTab("events")}
-            testId="nav-events"
-          />
-          <NavItem
-            icon={<CalendarDays size={23} />}
+            icon={<CalendarDays size={24} />}
             label="Plan"
             isActive={activeTab === "plan"}
             onClick={() => setActiveTab("plan")}
             testId="nav-plan"
           />
           <NavItem
-            icon={<MessageSquare size={23} />}
+            icon={<MessageSquare size={24} />}
             label="Coach"
             isActive={activeTab === "coach"}
             onClick={() => setActiveTab("coach")}
@@ -372,25 +402,18 @@ function MainApp() {
             testId="nav-dashboard"
           />
           <NavItem
-            icon={<Activity size={23} />}
-            label="Metrics"
+            icon={<Activity size={24} />}
+            label="Stats"
             isActive={activeTab === "metrics"}
             onClick={() => setActiveTab("metrics")}
             testId="nav-metrics"
           />
           <NavItem
-            icon={<Wrench size={23} />}
-            label="Bike"
-            isActive={activeTab === "service"}
-            onClick={() => setActiveTab("service")}
-            testId="nav-service"
-          />
-          <NavItem
-            icon={<Bike size={23} className={cn(activeTab === "strava" ? "text-[#FC4C02]" : "text-brand-muted")} />}
-            label="Strava"
-            isActive={activeTab === "strava"}
-            onClick={() => setActiveTab("strava")}
-            testId="nav-strava"
+            icon={<MoreHorizontal size={24} />}
+            label="More"
+            isActive={isMoreActive}
+            onClick={() => setActiveTab("more")}
+            testId="nav-more"
           />
         </div>
       </nav>
@@ -412,7 +435,7 @@ function MainApp() {
       <AccountCenterModal
         open={accountOpen}
         onOpenChange={setAccountOpen}
-        name={[user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Rider"}
+        name={riderDisplayName}
         email={user?.email || "No email available"}
         profileImageUrl={user?.profileImageUrl}
         subscriptionTier={subscriptionTier}
@@ -453,15 +476,23 @@ function NavItem({
     <button
       onClick={onClick}
       className={cn(
-        "min-h-[48px] w-full rounded-xl px-1 py-1.5 transition-colors duration-200 flex flex-col items-center justify-end gap-0.5",
-        isActive ? "text-brand-primary" : "text-brand-muted hover:text-brand-text"
+        "relative min-h-[52px] w-full min-w-0 rounded-xl px-0.5 py-2 transition-all duration-200 flex flex-col items-center justify-end gap-1",
+        isActive
+          ? "text-brand-primary bg-brand-panel-2/40"
+          : "text-brand-muted hover:text-brand-text"
       )}
       data-testid={testId}
     >
+      <span
+        className={cn(
+          "absolute top-1 h-1.5 w-7 rounded-full transition-all duration-200",
+          isActive ? "bg-brand-primary opacity-100" : "opacity-0",
+        )}
+      />
       <div className={cn("h-6 w-6 flex items-center justify-center", isActive && "drop-shadow-[0_0_8px_rgba(65,209,255,0.45)]")}>
         {icon}
       </div>
-      <span className="text-[10px] uppercase tracking-wider leading-none">
+      <span className="text-[11px] leading-none font-semibold text-center">
         {label}
       </span>
     </button>
@@ -482,21 +513,104 @@ function DashNavItem({
   testId: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-end">
+    <div className="flex flex-col items-center justify-end min-w-[64px]">
       <button
         onClick={onClick}
         className={cn(
-          "h-[62px] w-[62px] -mt-6 rounded-full border-4 ring-2 ring-black/20 border-brand-bg bg-[#22c55e] text-white shadow-[0_10px_24px_rgba(0,0,0,0.45)] flex items-center justify-center transition-transform duration-200",
+          "h-[66px] w-[66px] -mt-8 rounded-full border-4 ring-2 ring-black/20 border-brand-bg bg-[#22c55e] text-white shadow-[0_10px_24px_rgba(0,0,0,0.45)] flex items-center justify-center transition-transform duration-200",
           isActive ? "scale-105" : "hover:scale-[1.03]"
         )}
         data-testid={testId}
       >
         {icon}
       </button>
-      <span className={cn("mt-1 text-[10px] uppercase tracking-wider leading-none", isActive ? "text-brand-primary" : "text-brand-muted")}>
+      <span className={cn("mt-1 text-[11px] leading-none font-semibold", isActive ? "text-brand-primary" : "text-brand-muted")}>
         {label}
       </span>
     </div>
+  );
+}
+
+function MoreHub({
+  onOpenEvents,
+  onOpenBike,
+  onOpenStrava,
+  onOpenSettings,
+}: {
+  onOpenEvents: () => void;
+  onOpenBike: () => void;
+  onOpenStrava: () => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="p-4 space-y-4" data-testid="more-view">
+      <h2 className="text-2xl font-bold text-brand-text">More</h2>
+      <p className="text-sm text-brand-muted leading-relaxed">
+        Extra tools and integrations, kept simple for everyday riders.
+      </p>
+      <div className="glass-panel p-2 space-y-2">
+        <MoreAction
+          icon={<MountainSnow size={18} className="text-brand-primary" />}
+          title="Events"
+          description="Goal event, countdown, and event intel."
+          onClick={onOpenEvents}
+          testId="button-more-events"
+        />
+        <MoreAction
+          icon={<Wrench size={18} className="text-brand-primary" />}
+          title="Bike"
+          description="Maintenance tracking and distance-based checks."
+          onClick={onOpenBike}
+          testId="button-more-bike"
+        />
+        <MoreAction
+          icon={<Bike size={18} className="text-[#FC4C02]" />}
+          title="Strava"
+          description="Connect, sync activities, and compare plan vs actual."
+          onClick={onOpenStrava}
+          testId="button-more-strava"
+        />
+        <MoreAction
+          icon={<Settings size={18} className="text-brand-primary" />}
+          title="Settings"
+          description="Theme and notifications."
+          onClick={onOpenSettings}
+          testId="button-more-settings"
+        />
+      </div>
+    </div>
+  );
+}
+
+function MoreAction({
+  icon,
+  title,
+  description,
+  onClick,
+  testId,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full min-h-[52px] rounded-xl border border-brand-border/60 bg-brand-panel-2/60 px-3 py-3 flex items-center gap-3 text-left"
+      data-testid={testId}
+    >
+      <span className="w-8 h-8 rounded-lg bg-brand-bg/60 border border-brand-border/50 flex items-center justify-center shrink-0">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-brand-text truncate">{title}</span>
+        <span className="block text-xs text-brand-muted leading-snug">{description}</span>
+      </span>
+      <ChevronRight size={16} className="text-brand-muted shrink-0" />
+    </button>
   );
 }
 

@@ -85,8 +85,8 @@ export function LoginPage() {
             <span className="text-3xl font-bold text-gradient-primary">Ready</span>
           </div>
           <p className="text-brand-muted text-sm text-center leading-relaxed">
-            Your personal mountain bike training tracker.
-            Track workouts, monitor progress, and crush your goals.
+            Your personal mountain bike training guide.
+            Get back on the bike, build confidence, and ride consistently.
           </p>
         </div>
 
@@ -203,7 +203,7 @@ export function LoginPage() {
         </div>
 
         <p className="text-brand-muted/50 text-[10px] uppercase tracking-widest font-bold">
-          Train smarter. Ride harder.
+          Simple plan. Steady progress.
         </p>
       </div>
     </div>

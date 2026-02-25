@@ -22,7 +22,9 @@ import {
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
 import { getGeminiClient, getGeminiModel } from "./gemini-client";
 import { isAuthenticated } from "./auth";
+import { authStorage } from "./auth-storage";
 import { getPublicVapidKey, isPushConfigured } from "./push";
+import { analyzeRideHistoryForPlan, type TrainingState } from "./ride-analysis";
 import {
   buildTrainingPlanFromPreset,
   DEFAULT_TRAINING_PLAN_PRESET_ID,
@@ -826,6 +828,7 @@ export async function registerRoutes(
     eventDate: z.string().min(1),
     eventDistance: z.number().positive().optional(),
     eventElevation: z.number().positive().optional(),
+    age: z.number().int().min(13).max(100).optional(),
     fitnessLevel: z.enum(["beginner", "intermediate", "advanced"]),
     goals: z.array(z.string()).min(1),
     currentWeight: z.number().positive().optional(),
@@ -845,9 +848,68 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: "Event name, date, fitness level, and at least one goal are required" });
       }
-      const planReq: PlanRequest = parsed.data;
+      const [activities, profile] = await Promise.all([
+        storage.getStravaActivities(userId),
+        authStorage.getUser(userId),
+      ]);
+      const resolvedAge = parsed.data.age ?? profile?.age ?? null;
+      if (!resolvedAge) {
+        return res.status(400).json({ error: "Age is required for plan generation. Add age in profile or plan form." });
+      }
+      const rideAnalysis = analyzeRideHistoryForPlan(activities);
+
+      console.log(
+        `[ai-plan] ridesUsed=${rideAnalysis.ridesUsedCount} range=${rideAnalysis.rangeStartDate}..${rideAnalysis.rangeEndDate} window=${rideAnalysis.windowDaysUsed}d state=${rideAnalysis.trainingState}`,
+      );
+
+      if (rideAnalysis.excludedOlderThanYearCount > 0) {
+        console.log(
+          `[ai-plan] excluded ${rideAnalysis.excludedOlderThanYearCount} rides older than 1 year from baseline calculations`,
+        );
+      }
+
+      const gapDays = rideAnalysis.gapSinceLastRideDays;
+      const shouldApplyRampPhase = gapDays !== null && gapDays > 60;
+      const adjustedFitnessLevel = getAdjustedFitnessLevelForTrainingState(
+        parsed.data.fitnessLevel,
+        rideAnalysis.trainingState,
+      );
+
+      const analysisNotes = [
+        `Strava baseline uses only recent rides and excludes rides older than 1 year.`,
+        `Rides used for analysis: ${rideAnalysis.ridesUsedCount} in last ${rideAnalysis.windowDaysUsed} days (${rideAnalysis.rangeStartDate} to ${rideAnalysis.rangeEndDate}).`,
+        `Detected training state: ${rideAnalysis.trainingState}.`,
+        `Average ride duration: ${rideAnalysis.averageRideDurationMinutes} minutes.`,
+        `Average weekly frequency: ${rideAnalysis.averageWeeklyFrequency} rides/week.`,
+        rideAnalysis.recentLongestRideKm !== null
+          ? `Recent longest ride: ${rideAnalysis.recentLongestRideKm} km on ${rideAnalysis.recentLongestRideDate}.`
+          : "No recent longest ride available from recent activity.",
+        gapDays !== null
+          ? `Gap since last ride: ${gapDays} days.`
+          : "No rides in the last year.",
+      ];
+
+      if (shouldApplyRampPhase) {
+        analysisNotes.push(
+          `Training gap is > 60 days. Automatically reduce initial intensity and include a 2-3 week return-to-riding ramp phase before harder sessions.`,
+        );
+      }
+
+      if (rideAnalysis.trainingState === "Beginner") {
+        analysisNotes.push(
+          `No rides found in the last 180 days. Treat athlete as deconditioned/beginner and prioritize safe progression.`,
+        );
+      }
+
+      const planReq: PlanRequest = {
+        ...parsed.data,
+        age: resolvedAge,
+        fitnessLevel: adjustedFitnessLevel,
+        additionalNotes: [parsed.data.additionalNotes, analysisNotes.join(" ")].filter(Boolean).join("\n"),
+      };
 
       const sessions = await generateAIPlan(planReq);
+      await authStorage.updateUserProfile(userId, { age: resolvedAge });
 
       await storage.deleteAllSessions(userId);
       await storage.upsertManySessions(userId, sessions);
@@ -1143,6 +1205,23 @@ function isRideActivity(activity: StravaActivity): boolean {
     item === "gravelride" ||
     item === "ebikeride",
   );
+}
+
+function getAdjustedFitnessLevelForTrainingState(
+  current: PlanRequest["fitnessLevel"],
+  trainingState: TrainingState,
+): PlanRequest["fitnessLevel"] {
+  if (trainingState === "Beginner") {
+    return "beginner";
+  }
+
+  if (trainingState === "Returning") {
+    if (current === "advanced") return "intermediate";
+    if (current === "intermediate") return "beginner";
+    return "beginner";
+  }
+
+  return current;
 }
 
 type CoachHistoryItem = z.infer<typeof coachHistoryItemSchema>;

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { generateWorkoutShareCard } from "@/lib/share-card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { resolveNonRideWorkoutDetails } from "@/lib/workout-details";
+import { resolveNonRideWorkoutDetails, type ExerciseRecommendation } from "@/lib/workout-details";
 
 interface Props {
   session: Session;
@@ -207,6 +207,10 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
                 <p className="text-sm text-brand-muted leading-relaxed">{nonRideDetails.purpose}</p>
               </div>
 
+              {nonRideDetails.exerciseRecommendations.length > 0 && (
+                <ExerciseRecommendationsSection exercises={nonRideDetails.exerciseRecommendations} />
+              )}
+
               <StructuredSection title="Warm-up" items={nonRideDetails.warmUp} />
               <StructuredSection title="Main set" items={nonRideDetails.mainSet} />
               <StructuredSection title="Cool-down" items={nonRideDetails.coolDown} />
@@ -311,6 +315,47 @@ export function WorkoutDetailModal({ session, onClose }: Props) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseRecommendationsSection({ exercises }: { exercises: ExerciseRecommendation[] }) {
+  return (
+    <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
+      <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">Exercises</h3>
+      <p className="text-xs text-brand-muted leading-relaxed mb-3">
+        Simple movements for everyday riders. Pick options that feel smooth and pain-free.
+      </p>
+      <div className="space-y-3">
+        {exercises.map((exercise) => (
+          <div
+            key={exercise.key}
+            className="rounded-lg border border-brand-border/60 bg-brand-bg/60 p-3"
+          >
+            <p className="text-sm font-semibold text-brand-text">{exercise.name}</p>
+            <p className="text-xs text-brand-muted mt-1">
+              <span className="text-brand-text font-semibold">What it is:</span> {exercise.whatItIs}
+            </p>
+            <p className="text-xs text-brand-muted mt-1">
+              <span className="text-brand-text font-semibold">Why it helps cycling:</span> {exercise.whyItHelpsCycling}
+            </p>
+            {exercise.howToDoIt && exercise.howToDoIt.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs font-bold uppercase tracking-widest text-brand-primary cursor-pointer select-none">
+                  How to do it (optional)
+                </summary>
+                <ol className="mt-2 space-y-1 list-decimal list-inside">
+                  {exercise.howToDoIt.map((step, idx) => (
+                    <li key={`${exercise.key}-${idx}`} className="text-xs text-brand-muted leading-relaxed">
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

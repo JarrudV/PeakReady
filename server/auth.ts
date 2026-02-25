@@ -1,6 +1,7 @@
 import type { Express, RequestHandler } from "express";
 import { getApps, initializeApp, cert, getApp } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { z } from "zod";
 import { authStorage } from "./auth-storage";
 
 const AUTH_BYPASS_ENABLED =
@@ -153,6 +154,12 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 };
 
 export function registerAuthRoutes(app: Express): void {
+  const updateProfileSchema = z.object({
+    age: z.number().int().min(13).max(100).optional(),
+    firstName: z.string().trim().min(1).max(80).optional(),
+    lastName: z.string().trim().min(1).max(80).optional(),
+  });
+
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -161,6 +168,25 @@ export function registerAuthRoutes(app: Express): void {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  app.put("/api/auth/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const parsed = updateProfileSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid profile payload" });
+      }
+
+      const updated = await authStorage.updateUserProfile(userId, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      res.status(500).json({ message: "Failed to update user profile" });
     }
   });
 

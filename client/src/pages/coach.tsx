@@ -16,7 +16,7 @@ const WELCOME_MESSAGE: ChatMessage = {
   id: "coach-welcome",
   role: "assistant",
   content:
-    "I am your MTB endurance coach. Ask about this week's plan, pacing, recovery, fueling, or how to adjust sessions based on fatigue.",
+    "I am your MTB coach for everyday riders. Ask about this week's plan, recovery, and simple ways to stay consistent.",
 };
 
 export function CoachPage() {
@@ -91,7 +91,7 @@ export function CoachPage() {
           Coach
         </h2>
         <p className="text-xs text-brand-muted mt-1">
-          Chat with an AI MTB endurance coach using your current plan, recent Strava rides, and latest metrics.
+          Chat with an AI coach that helps you get back on the bike, build confidence, and ride consistently.
         </p>
         <p className="text-[11px] text-brand-muted/80 mt-1">
           Conversation is kept in this browser session only and is not stored long-term.
@@ -132,7 +132,7 @@ export function CoachPage() {
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about this week's workload, recovery, pacing, or how to adjust sessions..."
+            placeholder="Ask about this week, recovery, or how to adjust a session in simple terms..."
             className="flex-1 min-h-[44px] max-h-32 rounded-lg bg-brand-bg border border-brand-border px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted resize-y focus:outline-none focus:border-brand-primary"
             data-testid="coach-input"
           />

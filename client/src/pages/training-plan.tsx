@@ -44,7 +44,21 @@ interface AdaptiveSuggestion {
 type AlternateKind = "easier" | "shorter" | "harder";
 
 const WEEKDAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const INTENSITY_KEYWORDS = ["tempo", "threshold", "vo2", "interval", "race simulation", "sweet spot", "climbing tempo"];
+const INTENSITY_KEYWORDS = [
+  "steady hard",
+  "hard climb",
+  "short hard",
+  "event practice",
+  "interval",
+  "steady climb",
+  // Backward compatibility for older plans that still use legacy labels.
+  "tempo",
+  "threshold",
+  "vo2",
+  "race simulation",
+  "sweet spot",
+  "climbing tempo",
+];
 
 function dayOrder(day: string): number {
   const idx = WEEKDAY_ORDER.indexOf(day.slice(0, 3).toLowerCase());
