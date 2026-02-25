@@ -115,36 +115,38 @@ export function CoachPage({ onUpgrade }: Props) {
   };
 
   return (
-    <div className="p-4 space-y-3" data-testid="coach-page">
-      <div className="glass-panel p-4">
-        <h2 className="text-xl font-semibold text-brand-text" data-testid="text-coach-title">
-          Ask Your Coach
+    <div className="px-1 py-2 space-y-3" data-testid="coach-page">
+      <div>
+        <h2 className="text-base font-semibold text-brand-text" data-testid="text-coach-title">
+          Ask your coach
         </h2>
-        <p className="text-sm text-brand-muted mt-1">Simple answers to stay consistent.</p>
+        <p className="text-sm text-brand-muted mt-1 leading-relaxed">
+          Quick guidance for this week.
+        </p>
         {coachStatusLoading ? (
-          <p className="text-xs text-brand-muted mt-2">Checking access...</p>
+          <p className="text-xs text-brand-muted mt-1.5">Checking access...</p>
         ) : isPro ? (
-          <p className="mt-2 text-xs text-brand-success flex items-center gap-1.5">
+          <p className="mt-1.5 text-xs text-brand-success flex items-center gap-1.5">
             <Sparkles size={13} />
             Pro active. AI Coach is fully available.
           </p>
         ) : canUseCoach ? (
-          <p className="mt-2 text-xs text-brand-warning">
+          <p className="mt-1.5 text-xs text-brand-warning">
             Free plan: {freeRemaining ?? 0} AI coach reply left this month.
           </p>
         ) : (
-          <div className="mt-2 rounded-lg border border-brand-warning/40 bg-brand-warning/10 p-2.5">
-            <p className="text-xs text-brand-warning font-semibold flex items-center gap-1.5">
+          <div className="mt-2 rounded-lg border border-brand-warning/35 bg-brand-warning/8 p-2.5">
+            <p className="text-xs text-brand-warning font-medium flex items-center gap-1.5">
               <Lock size={12} />
               Available in Pro
             </p>
-            <p className="text-xs text-brand-muted mt-1">
+            <p className="text-xs text-brand-muted mt-1 leading-relaxed">
               Your free monthly coach reply has been used. Upgrade to keep coaching anytime.
             </p>
             <button
               type="button"
               onClick={() => onUpgrade?.()}
-              className="mt-2 min-h-[36px] rounded-md bg-brand-primary px-3 text-xs font-semibold text-brand-bg"
+              className="mt-2 min-h-[36px] rounded-md px-0 text-xs font-medium text-brand-primary underline underline-offset-2"
               data-testid="button-upgrade-from-coach"
             >
               Upgrade to Pro
@@ -159,7 +161,7 @@ export function CoachPage({ onUpgrade }: Props) {
             key={prompt}
             type="button"
             onClick={() => (canUseCoach ? setInput(prompt) : onUpgrade?.())}
-            className="min-h-[36px] rounded-full border border-brand-border/70 bg-brand-panel-2/35 px-3 text-xs font-medium text-brand-text disabled:opacity-50"
+            className="min-h-[34px] rounded-full border border-brand-border/45 bg-brand-panel-2/15 px-3 text-xs font-medium text-brand-text disabled:opacity-50"
             disabled={!canUseCoach}
           >
             {prompt}
@@ -169,7 +171,7 @@ export function CoachPage({ onUpgrade }: Props) {
 
       <div
         ref={scrollRef}
-        className="glass-panel p-3 h-[46vh] overflow-y-auto space-y-3 border-brand-border/60"
+        className="glass-panel p-2.5 h-[44dvh] min-h-[300px] overflow-y-auto space-y-2.5 border-brand-border/45"
         data-testid="coach-message-list"
       >
         {messages.map((message) => (
@@ -178,11 +180,11 @@ export function CoachPage({ onUpgrade }: Props) {
             className={cn(
               "max-w-[90%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed border",
               message.role === "assistant"
-                ? "mr-auto bg-brand-panel-2 border-brand-border text-brand-text"
-                : "ml-auto bg-brand-primary/15 border-brand-primary/35 text-brand-text",
+                ? "mr-auto bg-brand-panel-2/45 border-brand-border/45 text-brand-text"
+                : "ml-auto bg-brand-primary/12 border-brand-primary/25 text-brand-text",
             )}
           >
-            <div className="text-[10px] uppercase tracking-widest font-bold mb-1 text-brand-muted flex items-center gap-1">
+            <div className="text-[10px] font-medium mb-1 text-brand-muted flex items-center gap-1">
               {message.role === "assistant" ? <Bot size={11} /> : <User size={11} />}
               {message.role === "assistant" ? "Coach" : "You"}
             </div>
@@ -190,13 +192,13 @@ export function CoachPage({ onUpgrade }: Props) {
           </div>
         ))}
         {isSending && (
-          <div className="max-w-[88%] mr-auto rounded-xl px-3 py-2 text-sm border bg-brand-panel-2 border-brand-border text-brand-muted">
+          <div className="max-w-[88%] mr-auto rounded-xl px-3 py-2 text-sm border bg-brand-panel-2/45 border-brand-border/45 text-brand-muted">
             Coach is thinking...
           </div>
         )}
       </div>
 
-      <form onSubmit={sendMessage} className="glass-panel p-3 border-brand-border/60" data-testid="coach-chat-form">
+      <form onSubmit={sendMessage} className="glass-panel p-2.5 border-brand-border/45" data-testid="coach-chat-form">
         <div className="flex gap-2 items-end">
           <textarea
             value={input}
@@ -206,14 +208,14 @@ export function CoachPage({ onUpgrade }: Props) {
                 ? "Ask about this week, recovery, or what to do next..."
                 : "AI Coach is available on Pro. Upgrade to continue."
             }
-            className="flex-1 min-h-[44px] max-h-32 rounded-lg bg-brand-bg border border-brand-border px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted resize-y focus:outline-none focus:border-brand-primary"
+            className="flex-1 min-h-[44px] max-h-32 rounded-lg bg-brand-bg border border-brand-border/50 px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted resize-y focus:outline-none focus:border-brand-primary"
             data-testid="coach-input"
             disabled={!canUseCoach}
           />
           <button
             type="submit"
             disabled={!canSend}
-            className="h-11 px-4 rounded-lg bg-brand-primary text-brand-bg text-xs font-semibold disabled:opacity-50 flex items-center gap-2"
+            className="min-h-[44px] px-4 rounded-lg bg-brand-primary text-brand-bg text-sm font-semibold disabled:opacity-50 flex items-center gap-2"
             data-testid="coach-send"
           >
             <Send size={14} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Clock, Mountain, ArrowRight, CheckCircle2, Share2 } from "lucide-react";
+import { X, Clock, Mountain, CheckCircle2, Share2 } from "lucide-react";
 import type { Session, StravaActivity } from "@shared/schema";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
@@ -162,189 +162,154 @@ export function WorkoutDetailModal({
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-lg max-h-[85vh] bg-brand-bg border border-brand-border rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/50">
-        <div className="sticky top-0 z-20 flex items-center justify-between p-4 border-b border-brand-border bg-brand-bg/95 backdrop-blur-sm">
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 mb-1">
+      <div className="relative z-10 w-full max-w-lg max-h-[88vh] bg-brand-bg border border-brand-border/45 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/40">
+        <div className="sticky top-0 z-20 flex items-start justify-between p-4 border-b border-brand-border/35 bg-brand-bg/95 backdrop-blur-sm">
+          <div className="flex-1 pr-3">
+            <div className="flex items-center gap-2 mb-1.5">
               <span
                 className={cn(
-                  "text-[10px] uppercase font-black tracking-widest px-2 py-0.5 rounded-md",
+                  "text-[11px] font-medium px-2 py-0.5 rounded-full",
                   session.type === "Long Ride"
-                    ? "text-brand-primary bg-brand-primary/10 border border-brand-primary/20"
+                    ? "text-brand-primary bg-brand-primary/10 border border-brand-primary/25"
                     : session.type === "Ride"
-                      ? "text-brand-text bg-brand-panel-2 border border-brand-border/50"
+                      ? "text-brand-text bg-brand-panel-2/40 border border-brand-border/40"
                       : session.type === "Strength"
                         ? "text-brand-warning bg-brand-warning/10 border border-brand-warning/20"
-                        : "text-brand-muted bg-brand-panel-2 border border-brand-border/30"
+                        : "text-brand-muted bg-brand-panel-2/35 border border-brand-border/30"
                 )}
               >
                 {session.type}
               </span>
               {session.completed && (
                 <div className="flex items-center gap-1.5">
-                  <CheckCircle2 size={16} className="text-brand-success" />
-                  {session.completionSource && (
-                    <span className="text-[10px] uppercase tracking-widest font-bold text-brand-success/80">
-                      {session.completionSource}
-                    </span>
-                  )}
+                  <CheckCircle2 size={15} className="text-brand-success" />
+                  <span className="text-[11px] text-brand-success/90">Completed</span>
                 </div>
               )}
             </div>
-            <h2 className="text-lg font-bold text-brand-text leading-tight">
+            <h2 className="text-lg font-semibold text-brand-text leading-snug">
               {session.description}
             </h2>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {session.completed && (
-              <button
-                onClick={handleShare}
-                disabled={isSharing}
-                className="px-3 py-2 rounded-full bg-gradient-primary text-brand-bg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-colors"
-                data-testid="button-share-workout"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <Share2 size={14} />
-                  {isSharing ? "Preparing..." : "Share"}
-                </span>
-              </button>
-            )}
             <button
               onClick={onClose}
-              className="p-2 rounded-full bg-brand-panel-2 text-brand-text hover:bg-brand-panel transition-colors"
+              className="h-9 w-9 rounded-full bg-brand-panel-2/45 text-brand-text hover:bg-brand-panel transition-colors flex items-center justify-center"
               data-testid="button-close-detail"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
         </div>
 
-        <div className="flex gap-3 px-4 py-3 border-b border-brand-border bg-brand-bg/50">
-          <span className="flex items-center text-[10px] uppercase font-bold tracking-widest text-brand-muted">
-            <Clock size={14} className="mr-1 text-brand-primary" />
+        <div className="flex flex-wrap gap-2 px-4 py-2.5 border-b border-brand-border/30 bg-brand-bg/45">
+          <span className="inline-flex items-center rounded-full border border-brand-border/40 bg-brand-panel-2/20 px-2.5 py-1 text-[11px] text-brand-muted">
+            <Clock size={13} className="mr-1 text-brand-primary" />
             {session.minutes} min
           </span>
-          {session.zone && (
-            <span className="flex items-center text-[10px] uppercase font-bold tracking-widest text-brand-muted">
-              <ArrowRight size={14} className="mr-1 text-brand-secondary" />
-              {session.zone}
-            </span>
-          )}
+          <span className="inline-flex items-center rounded-full border border-brand-border/40 bg-brand-panel-2/20 px-2.5 py-1 text-[11px] text-brand-muted">
+            Target {getTargetZone(session)}
+          </span>
           {session.elevation && (
-            <span className="flex items-center text-[10px] uppercase font-bold tracking-widest text-brand-muted">
-              <Mountain size={14} className="mr-1 text-brand-primary" />
+            <span className="inline-flex items-center rounded-full border border-brand-border/40 bg-brand-panel-2/20 px-2.5 py-1 text-[11px] text-brand-muted">
+              <Mountain size={13} className="mr-1 text-brand-primary" />
               {session.elevation}
             </span>
           )}
-          <span className="flex items-center text-[10px] uppercase font-bold tracking-widest text-brand-muted ml-auto">
-            Week {session.week} | {session.day}
+          <span className="inline-flex items-center text-[11px] text-brand-muted ml-auto">
+            Week {session.week}, {session.day}
           </span>
         </div>
 
         <div
-          className="flex-1 overflow-y-auto p-5 workout-markdown"
+          className="flex-1 overflow-y-auto p-4 workout-markdown"
           data-testid="text-workout-details"
         >
-          <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4 mb-5">
-            <h3 className="text-sm font-semibold text-brand-text mb-2">Session overview</h3>
+          <div className="rounded-xl border border-brand-border/35 bg-brand-panel/30 p-3.5 mb-4">
+            <h3 className="text-sm font-semibold text-brand-text mb-1.5">Purpose</h3>
             <p className="text-sm text-brand-muted leading-relaxed">{getSessionPurpose(session)}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div>
-                <p className="text-xs text-brand-muted mb-1">Duration</p>
-                <p className="text-sm font-semibold text-brand-text">{session.minutes} min</p>
-              </div>
-              <div>
-                <p className="text-xs text-brand-muted mb-1">Target zone</p>
-                <p className="text-sm font-semibold text-brand-text">{getTargetZone(session)}</p>
-              </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <span className="rounded-full border border-brand-border/35 bg-brand-panel-2/15 px-2.5 py-1 text-[11px] text-brand-muted">
+                Duration: {session.minutes} min
+              </span>
+              <span className="rounded-full border border-brand-border/35 bg-brand-panel-2/15 px-2.5 py-1 text-[11px] text-brand-muted">
+                Target: {getTargetZone(session)}
+              </span>
             </div>
-            <ul className="space-y-1.5 mt-3">
+            <ul className="space-y-2 mt-3">
               {quickBreakdown.map((item, idx) => (
                 <li key={`quick-breakdown-${idx}`} className="text-sm text-brand-muted flex items-start gap-2">
-                  <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
+                  <span className="text-brand-primary mt-1.5 text-[7px]">*</span>
                   <span className="flex-1">{item}</span>
                 </li>
               ))}
             </ul>
           </div>
 
-          {nonRideDetails ? (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
-                <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">
-                  Purpose
-                </h3>
-                <p className="text-sm text-brand-muted leading-relaxed">{nonRideDetails.purpose}</p>
+          {(nonRideDetails || session.detailsMarkdown) && (
+            <details className="rounded-xl border border-brand-border/30 bg-brand-panel/25 p-3.5">
+              <summary className="text-sm text-brand-primary font-medium cursor-pointer select-none">
+                See full details (optional)
+              </summary>
+              <div className="mt-3 space-y-4">
+                {nonRideDetails ? (
+                  <>
+                    {nonRideDetails.exerciseRecommendations.length > 0 && (
+                      <ExerciseRecommendationsSection exercises={nonRideDetails.exerciseRecommendations} />
+                    )}
+                    <StructuredSection title="Warm-up" items={nonRideDetails.warmUp} />
+                    <StructuredSection title="Main set" items={nonRideDetails.mainSet} />
+                    <StructuredSection title="Cool-down" items={nonRideDetails.coolDown} />
+                    {nonRideDetails.equipment && nonRideDetails.equipment.length > 0 && (
+                      <StructuredSection title="Equipment" items={nonRideDetails.equipment} />
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="rounded-lg border border-brand-border/35 bg-brand-panel/25 p-3">
+                        <p className="text-xs text-brand-muted mb-1">Time estimate</p>
+                        <p className="text-sm font-semibold text-brand-text">{nonRideDetails.timeEstimate}</p>
+                      </div>
+                      <div className="rounded-lg border border-brand-border/35 bg-brand-panel/25 p-3">
+                        <p className="text-xs text-brand-muted mb-1">RPE guidance</p>
+                        <p className="text-sm font-semibold text-brand-text">{nonRideDetails.rpeGuidance}</p>
+                      </div>
+                    </div>
+                    {nonRideDetails.fallbackMessage && (
+                      <p className="text-xs text-brand-secondary leading-relaxed">{nonRideDetails.fallbackMessage}</p>
+                    )}
+                  </>
+                ) : (
+                  <ReactMarkdown
+                    components={{
+                      h2: ({ children }) => (
+                        <h2 className="text-base font-semibold text-brand-text mb-2 mt-1 first:mt-0">{children}</h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 className="text-sm font-semibold text-brand-text mt-4 mb-1.5">{children}</h3>
+                      ),
+                      p: ({ children }) => (
+                        <p className="text-sm text-brand-muted leading-relaxed mb-2">{children}</p>
+                      ),
+                      strong: ({ children }) => (
+                        <strong className="text-brand-text font-semibold">{children}</strong>
+                      ),
+                      ul: ({ children }) => <ul className="space-y-1.5 mb-3 ml-1">{children}</ul>,
+                      li: ({ children }) => (
+                        <li className="text-sm text-brand-muted flex items-start gap-2">
+                          <span className="text-brand-primary mt-1.5 text-[7px]">*</span>
+                          <span className="flex-1">{children}</span>
+                        </li>
+                      ),
+                      hr: () => <hr className="border-brand-border/40 my-4" />,
+                    }}
+                  >
+                    {session.detailsMarkdown || ""}
+                  </ReactMarkdown>
+                )}
               </div>
+            </details>
+          )}
 
-              {nonRideDetails.exerciseRecommendations.length > 0 && (
-                <ExerciseRecommendationsSection exercises={nonRideDetails.exerciseRecommendations} />
-              )}
-
-              <StructuredSection title="Warm-up" items={nonRideDetails.warmUp} />
-              <StructuredSection title="Main set" items={nonRideDetails.mainSet} />
-              <StructuredSection title="Cool-down" items={nonRideDetails.coolDown} />
-
-              {nonRideDetails.equipment && nonRideDetails.equipment.length > 0 && (
-                <StructuredSection title="Equipment" items={nonRideDetails.equipment} />
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-lg border border-brand-border/60 bg-brand-bg/40 p-3">
-                  <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-1">Time estimate</p>
-                  <p className="text-sm font-semibold text-brand-text">{nonRideDetails.timeEstimate}</p>
-                </div>
-                <div className="rounded-lg border border-brand-border/60 bg-brand-bg/40 p-3">
-                  <p className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-1">RPE guidance</p>
-                  <p className="text-sm font-semibold text-brand-text">{nonRideDetails.rpeGuidance}</p>
-                </div>
-              </div>
-
-              {nonRideDetails.fallbackMessage && (
-                <p className="text-xs text-brand-secondary">{nonRideDetails.fallbackMessage}</p>
-              )}
-            </div>
-          ) : session.detailsMarkdown ? (
-            <ReactMarkdown
-              components={{
-                h2: ({ children }) => (
-                  <h2 className="text-xl font-bold text-gradient-primary mb-3 mt-2 first:mt-0">
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className="text-sm font-bold text-brand-text uppercase tracking-wider mt-5 mb-2 flex items-center gap-2">
-                    <div className="w-1 h-4 bg-gradient-primary rounded-full" />
-                    {children}
-                  </h3>
-                ),
-                p: ({ children }) => (
-                  <p className="text-sm text-brand-muted leading-relaxed mb-2">
-                    {children}
-                  </p>
-                ),
-                strong: ({ children }) => (
-                  <strong className="text-brand-text font-semibold">
-                    {children}
-                  </strong>
-                ),
-                ul: ({ children }) => (
-                  <ul className="space-y-1.5 mb-3 ml-1">{children}</ul>
-                ),
-                li: ({ children }) => (
-                  <li className="text-sm text-brand-muted flex items-start gap-2">
-                    <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
-                    <span className="flex-1">{children}</span>
-                  </li>
-                ),
-                hr: () => (
-                  <hr className="border-brand-border my-4" />
-                ),
-              }}
-            >
-              {session.detailsMarkdown}
-            </ReactMarkdown>
-          ) : (
+          {!nonRideDetails && !session.detailsMarkdown && (
             <div className="text-center py-8 text-brand-muted">
               <p className="text-sm">No detailed workout instructions available for this session.</p>
               <p className="text-xs mt-2">Check back after loading a training plan with workout details.</p>
@@ -352,20 +317,28 @@ export function WorkoutDetailModal({
           )}
         </div>
 
-        <div className="border-t border-brand-border p-4 bg-brand-bg/50 space-y-3">
+        <div className="border-t border-brand-border/35 p-4 bg-brand-bg/45 space-y-3">
           {onToggleComplete && (
             <button
               type="button"
               onClick={handleCompletionAction}
-              className={cn(
-                "w-full min-h-[46px] rounded-lg text-sm font-semibold",
-                completionState
-                  ? "border border-brand-border bg-brand-panel-2/55 text-brand-text"
-                  : "bg-[#22c55e] text-white",
-              )}
+              className="w-full min-h-[48px] rounded-lg text-sm font-semibold bg-[#22c55e] text-white"
               data-testid="button-workout-mark-complete"
             >
               {completionLabel}
+            </button>
+          )}
+
+          {session.completed && (
+            <button
+              type="button"
+              onClick={handleShare}
+              disabled={isSharing}
+              className="text-sm text-brand-primary underline underline-offset-2 inline-flex items-center gap-1.5"
+              data-testid="button-share-workout"
+            >
+              <Share2 size={14} />
+              {isSharing ? "Preparing share..." : "Share workout card"}
             </button>
           )}
 
@@ -379,13 +352,13 @@ export function WorkoutDetailModal({
           )}
 
           <div>
-            <label className="text-[10px] uppercase tracking-widest text-brand-muted font-bold block mb-1.5">
-              Your session notes
+            <label className="text-xs text-brand-muted font-medium block mb-1.5">
+              Session notes
             </label>
             <textarea
               value={notesDraft}
               onChange={(event) => setNotesDraft(event.target.value)}
-              className="w-full bg-brand-bg text-brand-text border border-brand-border/60 rounded-lg px-3 py-2 text-sm min-h-[72px] resize-none focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
+              className="w-full bg-brand-bg text-brand-text border border-brand-border/45 rounded-lg px-3 py-2 text-sm min-h-[72px] resize-none focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
               placeholder="Add your own cues, substitutions, or post-workout observations..."
               data-testid="input-workout-detail-notes"
             />
@@ -393,7 +366,7 @@ export function WorkoutDetailModal({
               <button
                 onClick={handleSaveNotes}
                 disabled={isSavingNotes || !hasUnsavedNotes}
-                className="px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-md bg-gradient-primary text-brand-bg disabled:opacity-50"
+                className="px-1 py-1 text-xs text-brand-primary font-medium underline underline-offset-2 disabled:opacity-50"
                 data-testid="button-save-workout-detail-notes"
               >
                 {isSavingNotes ? "Saving..." : "Save notes"}
@@ -408,8 +381,8 @@ export function WorkoutDetailModal({
 
 function ExerciseRecommendationsSection({ exercises }: { exercises: ExerciseRecommendation[] }) {
   return (
-    <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
-      <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">Exercises</h3>
+    <div className="rounded-lg border border-brand-border/35 bg-brand-panel/25 p-3.5">
+      <h3 className="text-sm font-semibold text-brand-text mb-2">Exercises</h3>
       <p className="text-xs text-brand-muted leading-relaxed mb-3">
         Simple movements for everyday riders. Pick options that feel smooth and pain-free.
       </p>
@@ -417,7 +390,7 @@ function ExerciseRecommendationsSection({ exercises }: { exercises: ExerciseReco
         {exercises.map((exercise) => (
           <div
             key={exercise.key}
-            className="rounded-lg border border-brand-border/60 bg-brand-bg/60 p-3"
+            className="rounded-lg border border-brand-border/35 bg-brand-panel/20 p-3"
           >
             <p className="text-sm font-semibold text-brand-text">{exercise.name}</p>
             <p className="text-xs text-brand-muted mt-1">
@@ -428,7 +401,7 @@ function ExerciseRecommendationsSection({ exercises }: { exercises: ExerciseReco
             </p>
             {exercise.howToDoIt && exercise.howToDoIt.length > 0 && (
               <details className="mt-2">
-                <summary className="text-xs font-bold uppercase tracking-widest text-brand-primary cursor-pointer select-none">
+                <summary className="text-xs font-medium text-brand-primary cursor-pointer select-none">
                   How to do it (optional)
                 </summary>
                 <ol className="mt-2 space-y-1 list-decimal list-inside">
@@ -449,12 +422,12 @@ function ExerciseRecommendationsSection({ exercises }: { exercises: ExerciseReco
 
 function StructuredSection({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="rounded-lg border border-brand-border/70 bg-brand-bg/40 p-4">
-      <h3 className="text-sm font-black uppercase tracking-widest text-brand-text mb-2">{title}</h3>
+    <div className="rounded-lg border border-brand-border/35 bg-brand-panel/25 p-3.5">
+      <h3 className="text-sm font-semibold text-brand-text mb-2">{title}</h3>
       <ul className="space-y-2">
         {items.map((item, idx) => (
           <li key={`${title}-${idx}`} className="text-sm text-brand-muted flex items-start gap-2">
-            <span className="text-brand-primary mt-1.5 text-[6px]">*</span>
+            <span className="text-brand-primary mt-1.5 text-[7px]">*</span>
             <span className="flex-1">{item}</span>
           </li>
         ))}

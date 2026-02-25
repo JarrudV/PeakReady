@@ -158,7 +158,7 @@ export function PlanManager({ sessionCount }: Props) {
             setCsvPreview(null);
           }
         }}
-        className="w-full flex items-center justify-between glass-panel p-3 text-xs font-bold uppercase tracking-widest text-brand-muted hover:text-brand-text transition-colors"
+        className="w-full flex items-center justify-between glass-panel p-3 text-sm font-medium text-brand-muted hover:text-brand-text transition-colors"
         data-testid="button-toggle-plan-manager"
       >
         <span className="flex items-center gap-2">
@@ -172,9 +172,9 @@ export function PlanManager({ sessionCount }: Props) {
       </button>
 
       {isOpen && (
-        <div className="glass-panel mt-2 p-5 space-y-5 border-brand-primary/20 shadow-[0_0_15px_rgba(65,209,255,0.05)]" data-testid="plan-manager-content">
+        <div className="glass-panel mt-2 p-4 space-y-4 border-brand-border/35" data-testid="plan-manager-content">
           <div>
-            <h4 className="text-sm font-bold text-brand-text mb-3 flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
               <RotateCcw size={16} className="text-brand-primary" />
               Load Pre-built Plan
             </h4>
@@ -184,7 +184,7 @@ export function PlanManager({ sessionCount }: Props) {
               ) : selectedPreset ? (
                 <>
                   <div>
-                    <label className="text-[10px] uppercase tracking-widest font-bold text-brand-muted mb-2 block">
+                    <label className="text-xs font-medium text-brand-muted mb-2 block">
                       Choose Preset
                     </label>
                     <p className="text-[11px] text-brand-muted mb-2">
@@ -214,31 +214,31 @@ export function PlanManager({ sessionCount }: Props) {
                   </div>
 
                   <div className="mt-3 rounded-lg border border-brand-border/60 bg-brand-bg p-3">
-                    <h5 className="font-bold text-brand-text text-sm">{selectedPreset.name}</h5>
+                    <h5 className="font-semibold text-brand-text text-sm">{selectedPreset.name}</h5>
                     <p className="text-xs text-brand-muted mt-1 leading-relaxed">
                       {selectedPreset.description}
                     </p>
                     <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                       <div className="rounded-md border border-brand-border/60 bg-brand-panel-2 px-2.5 py-1.5">
-                        <span className="text-brand-muted uppercase tracking-wider text-[10px]">Level</span>
+                        <span className="text-brand-muted text-[10px]">Level</span>
                         <p className="text-brand-text font-semibold">{getPresetLevel(selectedPreset.tags)}</p>
                       </div>
                       <div className="rounded-md border border-brand-border/60 bg-brand-panel-2 px-2.5 py-1.5">
-                        <span className="text-brand-muted uppercase tracking-wider text-[10px]">Focus</span>
+                        <span className="text-brand-muted text-[10px]">Focus</span>
                         <p className="text-brand-text font-semibold">{getPresetFocus(selectedPreset.tags)}</p>
                       </div>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      <span className="rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-brand-primary">
+                      <span className="rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-[10px] font-medium text-brand-primary">
                         {selectedPreset.weeks} weeks
                       </span>
-                      <span className="rounded-full border border-brand-secondary/40 bg-brand-secondary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-brand-secondary">
+                      <span className="rounded-full border border-brand-secondary/40 bg-brand-secondary/10 px-2 py-0.5 text-[10px] font-medium text-brand-secondary">
                         {selectedPreset.sessionsPerWeek} sessions/week
                       </span>
                       {selectedPreset.tags.map((tag) => (
                         <span
                           key={`${selectedPreset.id}-${tag}`}
-                          className="rounded-full border border-brand-border bg-brand-panel-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-brand-muted"
+                          className="rounded-full border border-brand-border bg-brand-panel-2 px-2 py-0.5 text-[10px] font-medium text-brand-muted"
                         >
                           {formatTag(tag)}
                         </span>
@@ -250,7 +250,7 @@ export function PlanManager({ sessionCount }: Props) {
                     <button
                       onClick={() => setConfirmReset(true)}
                       disabled={isLoading}
-                      className="mt-3 w-full py-2.5 bg-gradient-primary text-brand-bg font-bold text-xs uppercase tracking-widest rounded-lg disabled:opacity-50 shadow-[0_0_10px_rgba(65,209,255,0.3)]"
+                      className="mt-3 w-full py-2.5 bg-brand-primary text-brand-bg font-semibold text-sm rounded-lg disabled:opacity-50"
                       data-testid="button-load-default"
                     >
                       Load Selected Plan
@@ -264,7 +264,7 @@ export function PlanManager({ sessionCount }: Props) {
                       <div className="flex gap-2">
                         <button
                           onClick={() => setConfirmReset(false)}
-                          className="flex-1 py-2.5 border border-brand-border text-brand-text font-bold text-xs uppercase tracking-widest rounded-lg"
+                          className="flex-1 py-2.5 border border-brand-border text-brand-text font-medium text-sm rounded-lg"
                           data-testid="button-cancel-load"
                         >
                           Cancel
@@ -272,7 +272,7 @@ export function PlanManager({ sessionCount }: Props) {
                         <button
                           onClick={handleLoadDefault}
                           disabled={isLoading}
-                          className="flex-1 py-2.5 bg-gradient-primary text-brand-bg font-bold text-xs uppercase tracking-widest rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                          className="flex-1 py-2.5 bg-brand-primary text-brand-bg font-semibold text-sm rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
                           data-testid="button-confirm-load"
                         >
                           {isLoading ? "Loading..." : <>
@@ -292,7 +292,7 @@ export function PlanManager({ sessionCount }: Props) {
           </div>
 
           <div className="border-t border-brand-border pt-5">
-            <h4 className="text-sm font-bold text-brand-text mb-3 flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-brand-text mb-3 flex items-center gap-2">
               <Upload size={16} className="text-brand-secondary" />
               Upload CSV Plan
             </h4>
@@ -304,7 +304,7 @@ export function PlanManager({ sessionCount }: Props) {
             {!csvPreview && (
               <div className="flex gap-2">
                 <label
-                  className="flex-1 py-3 border border-dashed border-brand-border rounded-lg text-center cursor-pointer hover:border-brand-primary/50 transition-colors flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-brand-muted hover:text-brand-text"
+                  className="flex-1 py-3 border border-dashed border-brand-border rounded-lg text-center cursor-pointer hover:border-brand-primary/50 transition-colors flex items-center justify-center gap-2 text-xs font-medium text-brand-muted hover:text-brand-text"
                   data-testid="button-select-csv"
                 >
                   <Upload size={14} />
@@ -320,7 +320,7 @@ export function PlanManager({ sessionCount }: Props) {
                 </label>
                 <button
                   onClick={handleDownloadTemplate}
-                  className="py-3 px-4 border border-brand-border rounded-lg text-xs font-bold uppercase tracking-widest text-brand-muted hover:text-brand-text transition-colors flex items-center gap-2"
+                  className="py-3 px-4 border border-brand-border rounded-lg text-xs font-medium text-brand-muted hover:text-brand-text transition-colors flex items-center gap-2"
                   data-testid="button-download-template"
                 >
                   <Download size={14} />
@@ -344,7 +344,7 @@ export function PlanManager({ sessionCount }: Props) {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setCsvPreview(null)}
-                    className="flex-1 py-2.5 border border-brand-border text-brand-text font-bold text-xs uppercase tracking-widest rounded-lg flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 border border-brand-border text-brand-text font-medium text-sm rounded-lg flex items-center justify-center gap-2"
                     data-testid="button-cancel-csv"
                   >
                     <X size={14} /> Cancel
@@ -352,7 +352,7 @@ export function PlanManager({ sessionCount }: Props) {
                   <button
                     onClick={handleUploadCsv}
                     disabled={isLoading}
-                    className="flex-1 py-2.5 bg-gradient-secondary text-brand-bg font-bold text-xs uppercase tracking-widest rounded-lg disabled:opacity-50 shadow-[0_0_10px_rgba(255,168,0,0.3)] flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 bg-brand-secondary text-brand-bg font-semibold text-sm rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
                     data-testid="button-upload-csv"
                   >
                     {isLoading ? "Uploading..." : <>

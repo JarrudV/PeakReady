@@ -153,20 +153,23 @@ export function Metrics({ metrics, sessions }: Props) {
   };
 
   return (
-    <div className="p-4 space-y-5" data-testid="metrics-view">
+    <div className="px-1 py-2 space-y-4" data-testid="metrics-view">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-brand-text" data-testid="text-metrics-title">
+        <h2 className="text-base font-semibold text-brand-text" data-testid="text-metrics-title">
           Stats
         </h2>
         <button
           onClick={() => setIsAdding((prev) => !prev)}
           className={cn(
-            "p-2 rounded-full border border-brand-border transition-colors",
-            isAdding ? "bg-brand-panel-2 text-brand-text" : "bg-brand-panel text-brand-primary",
+            "min-h-[40px] rounded-lg border border-brand-border/45 px-3 text-xs font-medium transition-colors",
+            isAdding ? "bg-brand-panel-2/35 text-brand-text" : "bg-brand-panel/35 text-brand-primary",
           )}
           data-testid="button-toggle-add-metric"
         >
-          {isAdding ? <X size={20} /> : <Plus size={20} />}
+          <span className="inline-flex items-center gap-1.5">
+            {isAdding ? <X size={15} /> : <Plus size={15} />}
+            {isAdding ? "Close" : "Add"}
+          </span>
         </button>
       </div>
 
@@ -174,7 +177,7 @@ export function Metrics({ metrics, sessions }: Props) {
 
       {!isAdding && (
         <>
-          <section className="grid grid-cols-2 gap-2.5" data-testid="stats-summary">
+          <section className="grid grid-cols-2 gap-2" data-testid="stats-summary">
             <SummaryCard
               label="Latest fatigue"
               value={latestFatigue != null ? `${latestFatigue}/10` : "No data"}
@@ -193,15 +196,18 @@ export function Metrics({ metrics, sessions }: Props) {
             />
           </section>
 
-          <section className="glass-panel p-4" data-testid="zone-distribution">
-            <h3 className="text-base font-semibold text-brand-text">Ride intensity distribution (last 28 days)</h3>
+          <section
+            className="rounded-xl border border-brand-border/35 bg-brand-panel/35 p-3.5"
+            data-testid="zone-distribution"
+          >
+            <h3 className="text-sm font-semibold text-brand-text">Ride intensity (last 28 days)</h3>
             {zoneTotalMinutes <= 0 ? (
-              <p className="text-sm text-brand-muted mt-2">
+              <p className="text-sm text-brand-muted mt-2 leading-relaxed">
                 No completed rides in the last 28 days yet.
               </p>
             ) : (
               <>
-                <div className="mt-3 h-3 w-full rounded-full overflow-hidden bg-brand-bg/60 border border-brand-border/50 flex">
+                <div className="mt-2.5 h-3 w-full rounded-full overflow-hidden bg-brand-bg/45 border border-brand-border/40 flex">
                   {ZONE_KEYS.map((zone) => {
                     const minutes = zoneTotals[zone];
                     const widthPct = (minutes / zoneTotalMinutes) * 100;
@@ -215,7 +221,7 @@ export function Metrics({ metrics, sessions }: Props) {
                     );
                   })}
                 </div>
-                <p className="text-xs text-brand-muted mt-2">
+                <p className="text-xs text-brand-muted mt-2 leading-relaxed">
                   Most of your recent riding time is in {dominantZone}. Keep most sessions easy to stay consistent.
                 </p>
                 <div className="grid grid-cols-2 gap-2 mt-3">
@@ -236,8 +242,8 @@ export function Metrics({ metrics, sessions }: Props) {
           </section>
 
           {chartData.length > 0 && (
-            <section className="glass-panel p-4" data-testid="weight-trend-card">
-              <h3 className="text-base font-semibold text-brand-text mb-3">Weight trend</h3>
+            <section className="rounded-xl border border-brand-border/35 bg-brand-panel/35 p-3.5" data-testid="weight-trend-card">
+              <h3 className="text-sm font-semibold text-brand-text mb-2.5">Weight trend</h3>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
@@ -266,8 +272,8 @@ export function Metrics({ metrics, sessions }: Props) {
             </section>
           )}
 
-          <section className="glass-panel p-4" data-testid="planned-actual-card">
-            <h3 className="text-base font-semibold text-brand-text mb-3">Planned vs actual (last 14 days)</h3>
+          <section className="rounded-xl border border-brand-border/35 bg-brand-panel/35 p-3.5" data-testid="planned-actual-card">
+            <h3 className="text-sm font-semibold text-brand-text mb-2.5">Planned vs actual (last 14 days)</h3>
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={plannedVsActualData}>
@@ -291,11 +297,11 @@ export function Metrics({ metrics, sessions }: Props) {
             <p className="text-xs text-brand-muted mt-2">Days with no Strava activity show 0 minutes.</p>
           </section>
 
-          <section className="space-y-2.5">
-            <h3 className="text-lg font-semibold text-brand-text">Metrics history</h3>
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-brand-text">Metrics history</h3>
             {sortedMetrics.length === 0 ? (
               <p
-                className="text-brand-muted text-center py-6 glass-panel border-brand-border/50"
+                className="text-brand-muted text-center py-6 rounded-xl border border-brand-border/35 bg-brand-panel/30"
                 data-testid="text-no-metrics"
               >
                 No metrics recorded yet.
@@ -304,11 +310,11 @@ export function Metrics({ metrics, sessions }: Props) {
               sortedMetrics.map((metric) => (
                 <div
                   key={metric.id}
-                  className="glass-panel p-4 border-brand-border/40"
+                  className="rounded-xl border border-brand-border/35 bg-brand-panel/30 p-3.5"
                   data-testid={`card-metric-${metric.id}`}
                 >
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-brand-border/45">
-                    <span className="font-semibold text-sm text-brand-text">
+                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-brand-border/35">
+                    <span className="font-medium text-sm text-brand-text">
                       {format(parseISO(metric.date), "MMM d, yyyy")}
                     </span>
                     <div className="flex items-center gap-2">
@@ -320,10 +326,10 @@ export function Metrics({ metrics, sessions }: Props) {
                               ? "bg-brand-danger/10 text-brand-danger border-brand-danger/30"
                               : metric.fatigue >= 5
                                 ? "bg-brand-warning/10 text-brand-warning border-brand-warning/30"
-                                : "bg-brand-success/10 text-brand-success border-brand-success/30",
+                              : "bg-brand-success/10 text-brand-success border-brand-success/30",
                           )}
                         >
-                          Fatigue {metric.fatigue}/10
+                          {metric.fatigue}/10
                         </span>
                       )}
                       <button
@@ -378,10 +384,10 @@ function SummaryCard({
   className?: string;
 }) {
   return (
-    <div className={cn("glass-panel p-3", className)}>
+    <div className={cn("rounded-xl border border-brand-border/35 bg-brand-panel/30 p-2.5", className)}>
       <p className="text-xs text-brand-muted">{label}</p>
       <p className="text-lg font-semibold text-brand-text mt-0.5">{value}</p>
-      <p className="text-xs text-brand-muted mt-1">{helper}</p>
+      <p className="text-[11px] text-brand-muted mt-0.5 leading-relaxed">{helper}</p>
     </div>
   );
 }
@@ -455,9 +461,13 @@ function AddMetricForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="glass-panel p-5" data-testid="form-add-metric">
-      <h3 className="text-lg font-semibold mb-4 text-brand-text">Log daily metrics</h3>
-      <div className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-xl border border-brand-border/35 bg-brand-panel/35 p-4"
+      data-testid="form-add-metric"
+    >
+      <h3 className="text-base font-semibold mb-3 text-brand-text">Log daily metrics</h3>
+      <div className="space-y-3.5">
         <div>
           <label className="text-xs text-brand-muted font-medium block mb-1">Date</label>
           <input
@@ -465,7 +475,7 @@ function AddMetricForm({
             required
             value={date}
             onChange={(event) => setDate(event.target.value)}
-            className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
+            className="w-full bg-brand-bg text-brand-text border border-brand-border/50 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
             data-testid="input-metric-date"
           />
         </div>
@@ -478,7 +488,7 @@ function AddMetricForm({
               step="0.1"
               value={weightKg}
               onChange={(event) => setWeightKg(event.target.value)}
-              className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
+              className="w-full bg-brand-bg text-brand-text border border-brand-border/50 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
               placeholder="e.g. 75.5"
               data-testid="input-metric-weight"
             />
@@ -493,7 +503,7 @@ function AddMetricForm({
               type="number"
               value={restingHr}
               onChange={(event) => setRestingHr(event.target.value)}
-              className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
+              className="w-full bg-brand-bg text-brand-text border border-brand-border/50 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-brand-primary outline-none"
               placeholder="bpm"
               data-testid="input-metric-hr"
             />
@@ -544,7 +554,7 @@ function AddMetricForm({
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            className="w-full bg-brand-bg text-brand-text border border-brand-border rounded-lg px-3 py-2 text-sm min-h-[80px] resize-none focus:ring-1 focus:ring-brand-primary outline-none"
+            className="w-full bg-brand-bg text-brand-text border border-brand-border/50 rounded-lg px-3 py-2 text-sm min-h-[80px] resize-none focus:ring-1 focus:ring-brand-primary outline-none"
             placeholder="Sleep, stress, soreness, anything useful."
             data-testid="input-metric-notes"
           />
@@ -554,7 +564,7 @@ function AddMetricForm({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 py-2.5 bg-brand-bg border border-brand-border/60 text-brand-text rounded-lg"
+            className="flex-1 py-2.5 rounded-lg text-brand-primary text-sm font-medium underline underline-offset-2"
             data-testid="button-cancel-metric"
           >
             Cancel

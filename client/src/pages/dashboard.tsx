@@ -105,15 +105,15 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
   };
 
   return (
-    <div className="p-4 space-y-8" data-testid="dashboard-view">
-      <section className="glass-panel p-4 space-y-3" data-testid="dash-status-section">
+    <div className="px-1 py-2 space-y-5" data-testid="dashboard-view">
+      <section className="glass-panel p-3.5 space-y-2.5" data-testid="dash-status-section">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold text-brand-text">Week {activeWeek} of {maxWeek}</h2>
+          <h2 className="text-base font-semibold text-brand-text">Week {activeWeek} of {maxWeek}</h2>
           <span
             className={
               hasMissedRide
-                ? "rounded-md bg-brand-warning/18 text-brand-warning px-2.5 py-1 text-xs font-semibold"
-                : "rounded-md bg-brand-success/18 text-brand-success px-2.5 py-1 text-xs font-semibold"
+                ? "rounded-md bg-brand-warning/14 text-brand-warning px-2 py-0.5 text-[11px] font-medium"
+                : "rounded-md bg-brand-success/14 text-brand-success px-2 py-0.5 text-[11px] font-medium"
             }
             data-testid="dash-status-badge"
           >
@@ -123,17 +123,20 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
         <p className="text-sm text-brand-muted" data-testid="dash-ride-progress-text">
           {rideCompletionText}
         </p>
-        <div className="h-2 rounded-full bg-brand-bg/55 overflow-hidden">
+        <div className="h-1.5 rounded-full bg-brand-bg/45 overflow-hidden">
           <div
-            className="h-2 rounded-full bg-brand-primary transition-all duration-300"
+            className="h-1.5 rounded-full bg-brand-primary transition-all duration-300"
             style={{ width: `${Math.max(0, Math.min(100, rideCompletionPct))}%` }}
             data-testid="dash-ride-progress-bar"
           />
         </div>
       </section>
 
-      <section className="glass-panel p-5 space-y-4 border border-brand-primary/30" data-testid="dash-next-ride-section">
-        <h3 className="text-lg font-semibold text-brand-text">Next Ride</h3>
+      <section
+        className="glass-panel p-4 space-y-3.5 border border-brand-primary/25 shadow-[0_8px_20px_rgba(0,0,0,0.14)]"
+        data-testid="dash-next-ride-section"
+      >
+        <h3 className="text-lg font-semibold text-brand-text">Next ride</h3>
         {nextRide ? (
           <>
             <div className="space-y-1">
@@ -141,7 +144,7 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
                 {nextRide.day}
                 {nextRide.scheduledDate ? ` - ${nextRide.scheduledDate}` : ""}
               </p>
-              <p className="text-xl font-semibold text-brand-text">{nextRide.description}</p>
+              <p className="text-lg font-semibold text-brand-text leading-snug">{nextRide.description}</p>
               <p className="text-sm text-brand-muted">
                 {nextRide.minutes} min - {effortTypeForSession(nextRide)}
               </p>
@@ -163,7 +166,7 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
             <button
               type="button"
               onClick={onOpenPlan}
-              className="w-full min-h-[48px] rounded-lg border border-brand-border bg-brand-panel-2/55 text-brand-text font-semibold text-sm"
+              className="w-full min-h-[44px] rounded-lg text-brand-primary text-sm font-medium underline-offset-2 hover:underline"
               data-testid="button-open-plan-from-dash"
             >
               Open Week Plan
@@ -172,12 +175,21 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
         )}
       </section>
 
-      <section className="glass-panel p-4" data-testid="dash-weekly-snapshot">
-        <h3 className="text-lg font-semibold text-brand-text mb-3">Weekly Snapshot</h3>
-        <div className="space-y-2 text-sm text-brand-muted">
-          <p>Planned: {plannedHours.toFixed(1)} hrs</p>
-          <p>Completed: {completedHours.toFixed(1)} hrs</p>
-          <p>Consistency score: {consistencyScore}/10</p>
+      <section className="pt-1" data-testid="dash-weekly-snapshot">
+        <h3 className="text-sm font-medium text-brand-muted mb-2">Weekly snapshot</h3>
+        <div className="glass-panel p-3.5 space-y-2">
+          <div className="flex items-baseline justify-between border-b border-brand-border/30 pb-2">
+            <span className="text-xs text-brand-muted">Planned time</span>
+            <span className="text-base font-semibold text-brand-text">{plannedHours.toFixed(1)} hrs</span>
+          </div>
+          <div className="flex items-baseline justify-between border-b border-brand-border/30 pb-2">
+            <span className="text-xs text-brand-muted">Completed time</span>
+            <span className="text-base font-semibold text-brand-text">{completedHours.toFixed(1)} hrs</span>
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-brand-muted">Consistency</span>
+            <span className="text-base font-semibold text-brand-text">{consistencyScore}/10</span>
+          </div>
         </div>
       </section>
 

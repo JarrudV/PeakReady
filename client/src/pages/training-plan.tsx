@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, Circle, Clock } from "lucide-react";
+import { CheckCircle2, ChevronDown, Circle } from "lucide-react";
 import type { Session } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -74,21 +74,23 @@ export function TrainingPlan({ sessions, activeWeek, maxWeek, onWeekChange }: Pr
   };
 
   return (
-    <div className="p-4 space-y-5" data-testid="training-plan-view">
-      <section className="space-y-3">
+    <div className="px-1 py-2 space-y-4" data-testid="training-plan-view">
+      <section className="space-y-2.5">
         <div>
-          <h2 className="text-xl font-semibold text-brand-text" data-testid="text-plan-title">
+          <h2 className="text-base font-semibold text-brand-text" data-testid="text-plan-title">
             Week {activeWeek} - {phaseName}
           </h2>
-          <p className="text-sm text-brand-muted">Your week at a glance. Tap a session for details.</p>
+          <p className="text-sm text-brand-muted leading-relaxed">
+            Tap any session for details and completion.
+          </p>
         </div>
         <div className="max-w-[220px]">
-          <label className="text-xs text-brand-muted block mb-1.5">Switch week</label>
+          <label className="text-xs text-brand-muted block mb-1">Switch week</label>
           <div className="relative">
             <select
               value={activeWeek}
               onChange={(event) => onWeekChange(Number(event.target.value))}
-              className="w-full appearance-none rounded-lg border border-brand-border bg-brand-panel-2/45 px-3 py-2.5 pr-9 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
+              className="w-full appearance-none rounded-lg border border-brand-border/45 bg-brand-panel-2/30 px-3 py-2.5 pr-9 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
               data-testid="select-active-week"
             >
               {Array.from({ length: Math.max(maxWeek, 1) }, (_, index) => index + 1).map((week) => (
@@ -105,41 +107,44 @@ export function TrainingPlan({ sessions, activeWeek, maxWeek, onWeekChange }: Pr
         </div>
       </section>
 
-      <section className="glass-panel p-2.5" data-testid="week-session-list">
+      <section
+        className="rounded-xl border border-brand-border/35 bg-brand-panel/35 overflow-hidden"
+        data-testid="week-session-list"
+      >
         {weeklySessions.length === 0 ? (
           <p className="text-sm text-brand-muted px-2 py-6 text-center">No sessions planned for this week yet.</p>
         ) : (
-          <div className="divide-y divide-brand-border/40">
+          <div className="divide-y divide-brand-border/30">
             {weeklySessions.map((session) => (
               <button
                 key={session.id}
                 type="button"
                 onClick={() => setViewingSession(session)}
-                className="w-full min-h-[56px] px-2.5 py-3 text-left flex items-center gap-3"
+                className="w-full min-h-[56px] px-3 py-2.5 text-left flex items-center gap-2.5 hover:bg-brand-panel-2/18 transition-colors"
                 data-testid={`plan-row-${session.id}`}
               >
                 <span
                   className={cn(
-                    "w-7 h-7 rounded-full border flex items-center justify-center shrink-0",
+                    "w-6 h-6 rounded-full border flex items-center justify-center shrink-0",
                     session.completed
-                      ? "border-brand-success/50 bg-brand-success/15 text-brand-success"
-                      : "border-brand-border/60 bg-brand-bg/45 text-brand-muted",
+                      ? "border-brand-success/45 bg-brand-success/10 text-brand-success"
+                      : "border-brand-border/55 bg-brand-bg/35 text-brand-muted",
                   )}
                 >
-                  {session.completed ? <CheckCircle2 size={15} /> : <Circle size={14} />}
+                  {session.completed ? <CheckCircle2 size={13} /> : <Circle size={12} />}
+                </span>
+
+                <span className="w-9 shrink-0 text-xs font-medium text-brand-muted">
+                  {session.day.slice(0, 3)}
                 </span>
 
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs text-brand-muted">{session.day}</span>
                   <span className="block text-sm font-semibold text-brand-text truncate">{session.description}</span>
-                  <span className="block text-xs text-brand-muted">
-                    {session.type === "Rest" ? "Rest" : `${session.minutes}m - ${getEffortType(session)}`}
-                  </span>
                 </span>
 
-                <span className="shrink-0 text-brand-muted flex items-center gap-1 text-xs">
-                  <Clock size={12} />
-                  {session.minutes}m
+                <span className="shrink-0 text-brand-muted text-xs font-medium">{session.minutes}m</span>
+                <span className="shrink-0 rounded-full border border-brand-border/45 bg-brand-panel-2/20 px-2 py-0.5 text-[11px] text-brand-muted">
+                  {getEffortType(session)}
                 </span>
               </button>
             ))}

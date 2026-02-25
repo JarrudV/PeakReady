@@ -65,9 +65,9 @@
   --brand-bg: #0f0c29;
   --brand-bg-to: #302b63;
   --brand-bg-alt: #24243e;
-  --brand-panel: rgba(255, 255, 255, 0.05);
-  --brand-panel-2: rgba(255, 255, 255, 0.1);
-  --brand-border: rgba(255, 255, 255, 0.12);
+  --brand-panel: rgba(255, 255, 255, 0.04);
+  --brand-panel-2: rgba(255, 255, 255, 0.075);
+  --brand-border: rgba(255, 255, 255, 0.1);
   --brand-text: rgba(255, 255, 255, 0.95);
   --brand-muted: rgba(255, 255, 255, 0.55);
   --brand-primary: #41D1FF;
@@ -123,9 +123,9 @@ html[data-theme-mode="light"] {
   --brand-bg: #eef4ff;
   --brand-bg-to: #dde8ff;
   --brand-bg-alt: #f7f9ff;
-  --brand-panel: rgba(255, 255, 255, 0.82);
-  --brand-panel-2: rgba(255, 255, 255, 0.94);
-  --brand-border: rgba(31, 54, 112, 0.15);
+  --brand-panel: rgba(255, 255, 255, 0.78);
+  --brand-panel-2: rgba(255, 255, 255, 0.9);
+  --brand-border: rgba(31, 54, 112, 0.14);
   --brand-text: rgba(19, 30, 66, 0.95);
   --brand-muted: rgba(38, 57, 100, 0.64);
   --brand-success: #1f8d66;
@@ -238,8 +238,8 @@ html[data-theme-accent="sunset"] {
   .glass-panel {
     background: var(--brand-panel);
     border: 1px solid var(--brand-border);
-    backdrop-filter: blur(12px);
-    border-radius: 1rem;
+    backdrop-filter: blur(8px);
+    border-radius: 0.9rem;
   }
 
   .pb-safe {
