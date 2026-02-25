@@ -269,6 +269,49 @@ html[data-theme-accent="sunset"] {
   }
 }
 
+@media (max-width: 480px) {
+  html {
+    font-size: 17px;
+  }
+
+  body {
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 5.4vw, 1.85rem);
+    line-height: 1.28;
+  }
+
+  h2 {
+    font-size: clamp(1.3rem, 4.8vw, 1.65rem);
+    line-height: 1.32;
+  }
+
+  h3 {
+    font-size: clamp(1.08rem, 4.1vw, 1.3rem);
+    line-height: 1.38;
+  }
+
+  /* Many screens use very small utility text classes. Upscale them on phones. */
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 0.78rem !important;
+    line-height: 1.32 !important;
+  }
+
+  .text-xs {
+    font-size: 0.86rem !important;
+    line-height: 1.42 !important;
+  }
+
+  .text-sm {
+    font-size: 0.96rem !important;
+    line-height: 1.5 !important;
+  }
+}
+
 @media (min-width: 1024px) {
   .mobile-shell {
     max-width: 760px;
