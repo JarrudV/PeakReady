@@ -139,6 +139,8 @@ const coachChatSchema = z.object({
   history: z.array(coachHistoryItemSchema).max(20).optional().default([]),
 });
 
+const FREE_COACH_MONTHLY_LIMIT = 1;
+
 function requireUserId(req: Request, res: Response): string | null {
   const userId = (req as any)?.user?.claims?.sub;
   if (!userId || typeof userId !== "string") {
@@ -165,6 +167,20 @@ function sanitizeStravaErrorMessage(input: unknown): string {
 
 async function setStravaLastError(userId: string, message: string | null): Promise<void> {
   await storage.setSetting(userId, "stravaLastError", message ?? "");
+}
+
+function getCurrentMonthKey(date = new Date()): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function getCoachUsageSettingKey(monthKey: string): string {
+  return `coachUsage:${monthKey}`;
+}
+
+function normalizeSubscriptionTier(raw: string | null): "free" | "pro" {
+  return raw === "pro" ? "pro" : "free";
 }
 
 export async function registerRoutes(
@@ -844,6 +860,16 @@ export async function registerRoutes(
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
+      const subscriptionTier = normalizeSubscriptionTier(
+        await storage.getSetting(userId, "subscriptionTier"),
+      );
+      if (subscriptionTier !== "pro") {
+        return res.status(403).json({
+          error: "AI plan generation is available on Pro. Upgrade to unlock it.",
+          code: "PRO_REQUIRED",
+          feature: "ai_plan_generation",
+        });
+      }
       const parsed = aiPlanSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Event name, date, fitness level, and at least one goal are required" });
@@ -921,6 +947,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/status", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const monthKey = getCurrentMonthKey();
+      const usageKey = getCoachUsageSettingKey(monthKey);
+      const [subscriptionTierRaw, usageRaw] = await Promise.all([
+        storage.getSetting(userId, "subscriptionTier"),
+        storage.getSetting(userId, usageKey),
+      ]);
+
+      const subscriptionTier = normalizeSubscriptionTier(subscriptionTierRaw);
+      const usedThisMonth = Math.max(0, Number.parseInt(usageRaw || "0", 10) || 0);
+      const monthlyLimit = subscriptionTier === "pro" ? null : FREE_COACH_MONTHLY_LIMIT;
+      const remainingThisMonth =
+        subscriptionTier === "pro"
+          ? null
+          : Math.max(0, FREE_COACH_MONTHLY_LIMIT - usedThisMonth);
+
+      res.json({
+        tier: subscriptionTier,
+        canUse: subscriptionTier === "pro" || usedThisMonth < FREE_COACH_MONTHLY_LIMIT,
+        monthlyLimit,
+        usedThisMonth,
+        remainingThisMonth,
+        period: monthKey,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch coach status" });
+    }
+  });
+
   app.post("/api/coach/chat", async (req, res) => {
     try {
       const userId = requireUserId(req, res);
@@ -931,13 +990,39 @@ export async function registerRoutes(
         return res.status(400).json({ error: "message is required" });
       }
 
-      const [sessions, metrics, activities, savedActiveWeek, refreshToken] = await Promise.all([
+      const monthKey = getCurrentMonthKey();
+      const usageKey = getCoachUsageSettingKey(monthKey);
+      const [
+        sessions,
+        metrics,
+        activities,
+        savedActiveWeek,
+        refreshToken,
+        subscriptionTierRaw,
+        usageRaw,
+      ] = await Promise.all([
         storage.getSessions(userId),
         storage.getMetrics(userId),
         storage.getStravaActivities(userId),
         storage.getSetting(userId, "activeWeek"),
         storage.getSetting(userId, "stravaRefreshToken"),
+        storage.getSetting(userId, "subscriptionTier"),
+        storage.getSetting(userId, usageKey),
       ]);
+
+      const subscriptionTier = normalizeSubscriptionTier(subscriptionTierRaw);
+      const usedThisMonth = Math.max(0, Number.parseInt(usageRaw || "0", 10) || 0);
+      if (subscriptionTier !== "pro" && usedThisMonth >= FREE_COACH_MONTHLY_LIMIT) {
+        return res.status(403).json({
+          error: "AI Coach is available on Pro. Free includes 1 coach reply per month.",
+          code: "PRO_REQUIRED",
+          feature: "coach_chat",
+          monthlyLimit: FREE_COACH_MONTHLY_LIMIT,
+          usedThisMonth,
+          remainingThisMonth: 0,
+          period: monthKey,
+        });
+      }
 
       const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
       const context = buildCoachContext({
@@ -970,6 +1055,12 @@ export async function registerRoutes(
         return res.status(502).json({ error: "Coach response was empty. Please retry." });
       }
 
+      let nextUsedThisMonth = usedThisMonth;
+      if (subscriptionTier !== "pro") {
+        nextUsedThisMonth = usedThisMonth + 1;
+        await storage.setSetting(userId, usageKey, String(nextUsedThisMonth));
+      }
+
       res.json({
         reply,
         context: {
@@ -978,6 +1069,11 @@ export async function registerRoutes(
           hasStravaConnection: Boolean(refreshToken),
           stravaRecentRideCount: countRecentStravaRides(activities, 14),
           metricsRecentCount: countRecentMetrics(metrics, 7),
+          tier: subscriptionTier,
+          coachRemainingThisMonth:
+            subscriptionTier === "pro"
+              ? null
+              : Math.max(0, FREE_COACH_MONTHLY_LIMIT - nextUsedThisMonth),
         },
       });
     } catch (err: any) {

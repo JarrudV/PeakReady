@@ -308,7 +308,7 @@ function MainApp() {
             onWeekChange={handleWeekChange}
           />
         )}
-        {activeTab === "coach" && <CoachPage />}
+        {activeTab === "coach" && <CoachPage onUpgrade={() => setAccountOpen(true)} />}
         {activeTab === "metrics" && <Metrics metrics={metrics} sessions={sessions} />}
         {activeTab === "service" && <ServiceTracker serviceItems={serviceItems} />}
         {activeTab === "events" && <EventTracker goal={goal || undefined} />}
@@ -317,6 +317,7 @@ function MainApp() {
           <MoreHub
             sessionCount={sessions.length}
             goal={goal || undefined}
+            subscriptionTier={subscriptionTier}
             onOpenEvents={() => setActiveTab("events")}
             onOpenBike={() => setActiveTab("service")}
             onOpenStrava={() => setActiveTab("strava")}
@@ -476,6 +477,7 @@ function DashNavItem({
 function MoreHub({
   sessionCount,
   goal,
+  subscriptionTier,
   onOpenEvents,
   onOpenBike,
   onOpenStrava,
@@ -484,6 +486,7 @@ function MoreHub({
 }: {
   sessionCount: number;
   goal?: GoalEvent;
+  subscriptionTier: "free" | "pro";
   onOpenEvents: () => void;
   onOpenBike: () => void;
   onOpenStrava: () => void;
@@ -503,13 +506,22 @@ function MoreHub({
         <h3 className="text-sm font-semibold text-brand-text">Plan tools</h3>
         <button
           type="button"
-          onClick={() => setShowAIBuilder(true)}
+          onClick={() => {
+            if (subscriptionTier === "pro") {
+              setShowAIBuilder(true);
+              return;
+            }
+            onOpenAccount();
+          }}
           className="w-full min-h-[48px] rounded-lg border border-brand-border/60 bg-brand-panel-2/50 px-3 py-2 text-left text-sm text-brand-text flex items-center gap-2"
           data-testid="button-more-open-ai-builder"
         >
           <Sparkles size={16} className="text-brand-primary" />
-          Rebuild plan with AI
+          {subscriptionTier === "pro" ? "Rebuild plan with AI" : "Rebuild plan with AI (Pro)"}
         </button>
+        {subscriptionTier !== "pro" && (
+          <p className="text-xs text-brand-muted">Available on Pro. Upgrade from Profile and account.</p>
+        )}
         <PlanManager sessionCount={sessionCount} />
       </div>
 
