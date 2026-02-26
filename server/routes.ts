@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { storage } from "./storage";
 import { db } from "./db";
 import {
@@ -9,6 +9,8 @@ import {
   coachAdjustmentProposals,
   coachAdjustmentEvents,
   coachAdjustmentEventItems,
+  rideInsights,
+  planRealignEvents,
   insertMetricSchema,
   insertServiceItemSchema,
   insertGoalEventSchema,
@@ -27,6 +29,7 @@ import {
   exchangeCodeForToken,
   createStravaOAuthState,
   parseStravaOAuthState,
+  type StravaSyncMatch,
 } from "./strava";
 import { generateAIPlan, type PlanRequest } from "./ai-plan-generator";
 import { getGeminiClient, getGeminiModel } from "./gemini-client";
@@ -155,6 +158,18 @@ const metricUpdateSchema = insertMetricSchema
 const FREE_COACH_MONTHLY_LIMIT = 5;
 const COACH_STRAVA_SYNC_INTERVAL_HOURS = 6;
 const COACH_ADJUSTMENTS_SAFE_MODE = process.env.COACH_ADJUSTMENTS_SAFE_MODE !== "false";
+const COACH_RESPONSE_STRICT_JSON =
+  process.env.COACH_RESPONSE_STRICT_JSON !== "false" &&
+  process.env.coachResponseStrictJson !== "false";
+const STRAVA_ADAPTIVE_MATCH_V1 =
+  process.env.STRAVA_ADAPTIVE_MATCH_V1 !== "false" &&
+  process.env.stravaAdaptiveMatchV1 !== "false";
+const DASHBOARD_RIDE_INSIGHTS =
+  process.env.DASHBOARD_RIDE_INSIGHTS !== "false" &&
+  process.env.dashboardRideInsights !== "false";
+const PLAN_DATE_REALIGN_PROMPT =
+  process.env.PLAN_DATE_REALIGN_PROMPT !== "false" &&
+  process.env.planDateRealignPrompt !== "false";
 const COACH_PROPOSAL_TTL_HOURS = 24;
 const COACH_PROPOSAL_MAX_CHANGES = 3;
 const COACH_PROPOSAL_MIN_MINUTES = 20;
@@ -194,6 +209,52 @@ interface CoachProposalApiResponse {
   createdAt: string;
   expiresAt: string;
   changes: CoachProposalApiItem[];
+}
+
+interface StravaAlignmentSuggestion {
+  fromDate: string;
+  toDate: string;
+  deltaDays: number;
+  reason: string;
+}
+
+interface RideInsightMetric {
+  label: string;
+  value: string;
+}
+
+interface RideInsightProposalSummary {
+  id: string;
+  status: CoachAdjustmentProposalStatus;
+  activeWeek: number;
+  changes: CoachProposalApiItem[];
+}
+
+interface LatestRideInsightResponse {
+  insightId: string;
+  activity: {
+    id: string;
+    name: string;
+    startDate: string;
+  };
+  matchedSession: {
+    id: string;
+    label: string;
+    completed: boolean;
+  } | null;
+  summary: {
+    headline: string;
+    text: string;
+  };
+  metrics: RideInsightMetric[];
+  proposal: RideInsightProposalSummary | null;
+}
+
+interface RideInsightModelPayload {
+  headline?: string;
+  summary?: string;
+  metrics?: Array<{ label?: string; value?: string }>;
+  changes?: CoachModelSuggestedChange[];
 }
 
 function requireUserId(req: Request, res: Response): string | null {
@@ -320,6 +381,435 @@ function parseCoachModelPayload(raw: string): CoachModelPayload | null {
   }
 
   return null;
+}
+
+function parseRideInsightModelPayload(raw: string): RideInsightModelPayload | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const candidates: string[] = [trimmed];
+  const fencedMatches = Array.from(trimmed.matchAll(/```json\s*([\s\S]*?)```/gi));
+  for (const match of fencedMatches) {
+    if (match[1]) candidates.push(match[1].trim());
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as RideInsightModelPayload;
+      if (!parsed || typeof parsed !== "object") continue;
+      return parsed;
+    } catch {
+      // Keep trying.
+    }
+  }
+
+  return null;
+}
+
+function normalizeInsightMetrics(input: unknown): RideInsightMetric[] {
+  if (!Array.isArray(input)) return [];
+
+  const metrics: RideInsightMetric[] = [];
+  for (const item of input) {
+    const label = typeof item?.label === "string" ? item.label.trim() : "";
+    const value = typeof item?.value === "string" ? item.value.trim() : "";
+    if (!label || !value) continue;
+    metrics.push({
+      label: label.slice(0, 48),
+      value: value.slice(0, 64),
+    });
+    if (metrics.length >= 8) break;
+  }
+
+  return metrics;
+}
+
+function extractCoachReplyText(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const looksLikeJson =
+    trimmed.startsWith("{") ||
+    trimmed.startsWith("[") ||
+    trimmed.startsWith("```");
+
+  const parsedPayload = parseCoachModelPayload(trimmed);
+  if (parsedPayload?.reply && typeof parsedPayload.reply === "string") {
+    const reply = parsedPayload.reply.trim();
+    return reply || null;
+  }
+
+  if (looksLikeJson) {
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof parsed.reply === "string" && parsed.reply.trim()) {
+        return parsed.reply.trim();
+      }
+    } catch {
+      // Ignore parse failures and fall through.
+    }
+    return null;
+  }
+
+  return trimmed;
+}
+
+function buildDeterministicCoachFallback(params: {
+  activeWeek: number;
+  message: string;
+  sessions: Session[];
+  activities: StravaActivity[];
+  metrics: Metric[];
+}): string {
+  const weekSessions = params.sessions.filter((session) => session.week === params.activeWeek);
+  const pending = weekSessions.filter((session) => !session.completed).length;
+  const recentRides = countRecentStravaRides(params.activities, 14);
+  const recentMetrics = countRecentMetrics(params.metrics, 7);
+  const question = params.message.trim().slice(0, 120);
+
+  return [
+    `I can help with Week ${params.activeWeek}.`,
+    `You have ${pending} pending sessions, ${recentRides} rides synced in the last 14 days, and ${recentMetrics} recent metrics entries.`,
+    `Based on your message "${question}", start with an easy Z1-Z2 day if fatigue is high, then resume the next planned session.`,
+    "If you want plan edits, ask me which day to adjust and I will suggest specific minutes and zone changes.",
+  ].join(" ");
+}
+
+const COACH_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    changes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          minutes: { type: "number" },
+          zone: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
+    },
+  },
+  required: ["reply", "changes"],
+} as const;
+
+const RIDE_INSIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    summary: { type: "string" },
+    metrics: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          value: { type: "string" },
+        },
+      },
+    },
+    changes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          minutes: { type: "number" },
+          zone: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
+    },
+  },
+  required: ["headline", "summary", "metrics", "changes"],
+} as const;
+
+async function generateCoachReplyWithGuardrails(params: {
+  prompt: string;
+  message: string;
+  sessions: Session[];
+  activities: StravaActivity[];
+  metrics: Metric[];
+  activeWeek: number;
+}): Promise<{ reply: string; payload: CoachModelPayload | null }> {
+  const ai = getGeminiClient();
+  const model = getGeminiModel("gemini-2.5-flash");
+
+  let payload: CoachModelPayload | null = null;
+  let reply = "";
+
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: params.prompt,
+      config: {
+        temperature: 0.55,
+        maxOutputTokens: 1200,
+        ...(COACH_RESPONSE_STRICT_JSON
+          ? {
+              responseMimeType: "application/json",
+              responseSchema: COACH_RESPONSE_SCHEMA as any,
+            }
+          : {}),
+      },
+    });
+
+    const raw = response.text?.trim() || "";
+    payload = parseCoachModelPayload(raw);
+    reply = payload?.reply?.trim() || extractCoachReplyText(raw) || "";
+    if (!payload && COACH_RESPONSE_STRICT_JSON) {
+      console.warn("[coach] strict-json parse failed on primary response");
+    }
+  } catch (err: any) {
+    console.warn("[coach] primary generation failed:", err?.message || err);
+  }
+
+  if (!reply) {
+    try {
+      const retry = await ai.models.generateContent({
+        model,
+        contents: `${params.prompt}\n\nRespond with plain text only. Do not return JSON, markdown, or code fences.`,
+        config: {
+          temperature: 0.45,
+          maxOutputTokens: 800,
+        },
+      });
+      const rawRetry = retry.text?.trim() || "";
+      reply = extractCoachReplyText(rawRetry) || "";
+    } catch (err: any) {
+      console.warn("[coach] plain-text retry failed:", err?.message || err);
+    }
+  }
+
+  if (!reply) {
+    reply = buildDeterministicCoachFallback({
+      activeWeek: params.activeWeek,
+      message: params.message,
+      sessions: params.sessions,
+      activities: params.activities,
+      metrics: params.metrics,
+    });
+  }
+
+  return {
+    reply,
+    payload,
+  };
+}
+
+function shiftIsoDateByDays(dateIso: string, deltaDays: number): string | null {
+  const parsed = safeDate(`${dateIso}T00:00:00Z`);
+  if (!parsed) return null;
+  parsed.setUTCDate(parsed.getUTCDate() + deltaDays);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function diffIsoDays(fromIso: string, toIso: string): number | null {
+  const fromMs = safeDate(`${fromIso}T00:00:00Z`)?.getTime();
+  const toMs = safeDate(`${toIso}T00:00:00Z`)?.getTime();
+  if (fromMs === undefined || toMs === undefined) return null;
+  return Math.round((toMs - fromMs) / 86_400_000);
+}
+
+function getCurrentWeekMondayIso(): string {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+  return monday.toISOString().slice(0, 10);
+}
+
+function getIsoForDayInCurrentWeek(dayName: string): string | null {
+  const order = getDayOrder(dayName);
+  if (order < 0 || order > 6) return null;
+  const mondayIso = getCurrentWeekMondayIso();
+  return shiftIsoDateByDays(mondayIso, order);
+}
+
+function detectPlanDateAlignmentSuggestion(params: {
+  sessions: Session[];
+  activities: StravaActivity[];
+  activeWeek: number;
+}): StravaAlignmentSuggestion | null {
+  if (params.activities.length === 0) return null;
+
+  const hasRecentRide = countRecentStravaRides(params.activities, 14) > 0;
+  if (!hasRecentRide) return null;
+
+  const weekPending = params.sessions
+    .filter((session) => session.week === params.activeWeek && !session.completed && !!session.scheduledDate)
+    .sort((a, b) => (a.scheduledDate || "").localeCompare(b.scheduledDate || ""));
+  if (weekPending.length === 0) return null;
+
+  const earliest = weekPending[0];
+  const fromDate = earliest.scheduledDate!;
+  const toDate = getIsoForDayInCurrentWeek(earliest.day);
+  if (!toDate) return null;
+
+  const deltaDays = diffIsoDays(fromDate, toDate);
+  if (deltaDays === null || Math.abs(deltaDays) < 3) return null;
+
+  return {
+    fromDate,
+    toDate,
+    deltaDays,
+    reason: `Plan starts ${fromDate}, but current week should start around ${toDate}.`,
+  };
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return "n/a";
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function buildFallbackRideInsight(activity: StravaActivity, matchedSession: Session | null): {
+  headline: string;
+  summary: string;
+  metrics: RideInsightMetric[];
+} {
+  const metrics: RideInsightMetric[] = [
+    { label: "Distance", value: `${((activity.distance || 0) / 1000).toFixed(1)} km` },
+    { label: "Moving time", value: formatDuration(activity.movingTime) },
+    { label: "Elevation", value: `${Math.round(activity.totalElevationGain || 0)} m` },
+  ];
+  if (activity.averageHeartrate) {
+    metrics.push({ label: "Avg HR", value: `${Math.round(activity.averageHeartrate)} bpm` });
+  }
+  if (activity.maxHeartrate) {
+    metrics.push({ label: "Max HR", value: `${Math.round(activity.maxHeartrate)} bpm` });
+  }
+  if (activity.averageWatts) {
+    metrics.push({ label: "Avg Power", value: `${Math.round(activity.averageWatts)} W` });
+  }
+  if (activity.sufferScore) {
+    metrics.push({ label: "Relative effort", value: String(activity.sufferScore) });
+  }
+
+  const matchedContext = matchedSession
+    ? `Matched to planned session: ${matchedSession.description} (${matchedSession.minutes} min${matchedSession.zone ? ` ${matchedSession.zone}` : ""}).`
+    : "No planned session match was found for this ride.";
+
+  return {
+    headline: "Latest synced ride insight",
+    summary: `${matchedContext} Keep recovery proportional to effort and adjust only if fatigue remains elevated for 48 hours.`,
+    metrics: metrics.slice(0, 8),
+  };
+}
+
+async function createLatestRideInsightAfterSync(params: {
+  userId: string;
+  activeWeek: number;
+  latestSyncedActivityId: string | null;
+  matches: StravaSyncMatch[];
+  sessions: Session[];
+  activities: StravaActivity[];
+  sourceUserMessage: string;
+}): Promise<string | null> {
+  if (!params.latestSyncedActivityId) return null;
+
+  const activity = params.activities.find((item) => item.stravaId === params.latestSyncedActivityId);
+  if (!activity) return null;
+
+  const matching = params.matches.find((item) => item.stravaActivityId === activity.stravaId) || null;
+  const matchedSession = matching
+    ? params.sessions.find((session) => session.id === matching.sessionId) || null
+    : null;
+
+  const fallback = buildFallbackRideInsight(activity, matchedSession);
+  let proposalId: string | null = null;
+  let headline = fallback.headline;
+  let summary = fallback.summary;
+  let metrics = fallback.metrics;
+
+  try {
+    const ai = getGeminiClient();
+    const model = getGeminiModel("gemini-2.5-flash");
+    const ridePrompt = buildRideInsightPrompt({
+      activity,
+      matchedSession,
+      activeWeek: params.activeWeek,
+      sessions: params.sessions,
+    });
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: ridePrompt,
+      config: {
+        temperature: 0.45,
+        maxOutputTokens: 900,
+        responseMimeType: "application/json",
+        responseSchema: RIDE_INSIGHT_SCHEMA as any,
+      },
+    });
+
+    const payload = parseRideInsightModelPayload(response.text || "");
+    if (payload?.headline?.trim()) {
+      headline = payload.headline.trim().slice(0, 120);
+    }
+    if (payload?.summary?.trim()) {
+      summary = payload.summary.trim().slice(0, 500);
+    }
+
+    const normalizedMetrics = normalizeInsightMetrics(payload?.metrics);
+    if (normalizedMetrics.length > 0) {
+      metrics = normalizedMetrics;
+    }
+
+    if (
+      COACH_ADJUSTMENTS_SAFE_MODE &&
+      Array.isArray(payload?.changes) &&
+      payload!.changes.length > 0
+    ) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayOrder = getTodayOrder();
+      const eligibleSessions = params.sessions.filter((session) =>
+        isFutureSessionForCoach(session, params.activeWeek, todayIso, todayOrder),
+      );
+      const validatedChanges = buildValidatedCoachProposalChanges(payload!.changes, eligibleSessions);
+      if (validatedChanges.length > 0) {
+        const expiresAt = new Date(
+          Date.now() + COACH_PROPOSAL_TTL_HOURS * 60 * 60 * 1000,
+        ).toISOString();
+        const [proposal] = await db
+          .insert(coachAdjustmentProposals)
+          .values({
+            userId: params.userId,
+            activeWeek: params.activeWeek,
+            status: "pending",
+            changes: validatedChanges,
+            sourceUserMessage: params.sourceUserMessage,
+            coachReply: summary,
+            expiresAt,
+          })
+          .returning();
+        proposalId = proposal?.id ?? null;
+      }
+    }
+  } catch (err: any) {
+    console.warn("[insights] failed to generate AI ride insight:", err?.message || err);
+  }
+
+  const [inserted] = await db
+    .insert(rideInsights)
+    .values({
+      userId: params.userId,
+      stravaActivityId: activity.stravaId,
+      sessionId: matchedSession?.id || null,
+      proposalId,
+      headline,
+      summary,
+      metrics,
+    })
+    .returning();
+
+  return inserted?.id || null;
 }
 
 function buildValidatedCoachProposalChanges(
@@ -1046,10 +1536,63 @@ export async function registerRoutes(
       return res.status(400).json({ error: message });
     }
     try {
-      const result = await syncStravaActivities(userId, savedRefresh);
+      const [sessions, savedActiveWeek] = await Promise.all([
+        storage.getSessions(userId),
+        storage.getSetting(userId, "activeWeek"),
+      ]);
+      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
+
+      const result = await syncStravaActivities(userId, savedRefresh, {
+        activeWeek,
+        adaptiveMatchV1: STRAVA_ADAPTIVE_MATCH_V1,
+      });
       await storage.setSetting(userId, "stravaLastSync", new Date().toISOString());
       await setStravaLastError(userId, null);
-      res.json(result);
+
+      const [sessionsAfterSync, activitiesAfterSync] = await Promise.all([
+        storage.getSessions(userId),
+        storage.getStravaActivities(userId),
+      ]);
+
+      const alignmentSuggestion = PLAN_DATE_REALIGN_PROMPT
+        ? detectPlanDateAlignmentSuggestion({
+            sessions: sessionsAfterSync,
+            activities: activitiesAfterSync,
+            activeWeek,
+          })
+        : null;
+
+      const latestInsightId = DASHBOARD_RIDE_INSIGHTS
+        ? await createLatestRideInsightAfterSync({
+            userId,
+            activeWeek,
+            latestSyncedActivityId: result.latestSyncedActivityId,
+            matches: result.matches,
+            sessions: sessionsAfterSync,
+            activities: activitiesAfterSync,
+            sourceUserMessage: "Automatic insight after Strava sync",
+          })
+        : null;
+
+      console.log(
+        `[strava-match] user=${userId} matched=${result.matchedCount} unmatched=${result.unmatchedCount} autoCompleted=${result.autoCompleted}`,
+      );
+      if (alignmentSuggestion) {
+        console.log(
+          `[plan-realign] suggestion user=${userId} from=${alignmentSuggestion.fromDate} to=${alignmentSuggestion.toDate} deltaDays=${alignmentSuggestion.deltaDays}`,
+        );
+      }
+
+      res.json({
+        synced: result.synced,
+        total: result.total,
+        autoCompleted: result.autoCompleted,
+        matchedCount: result.matchedCount,
+        unmatchedCount: result.unmatchedCount,
+        matches: result.matches,
+        alignmentSuggestion,
+        latestInsightId,
+      });
     } catch (err: any) {
       const rawMessage = err?.message || "Strava sync failed";
       const sanitizedRaw = sanitizeStravaErrorMessage(rawMessage);
@@ -1216,6 +1759,166 @@ export async function registerRoutes(
       });
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch coach context" });
+    }
+  });
+
+  app.get("/api/insights/latest-ride", async (req, res) => {
+    try {
+      if (!DASHBOARD_RIDE_INSIGHTS) {
+        return res.json(null);
+      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [latestInsight] = await db
+        .select()
+        .from(rideInsights)
+        .where(eq(rideInsights.userId, userId))
+        .orderBy(desc(rideInsights.createdAt))
+        .limit(1);
+
+      if (!latestInsight) {
+        return res.json(null);
+      }
+
+      const [activity, matchedSession, linkedProposal] = await Promise.all([
+        storage.getStravaActivities(userId).then((activities) =>
+          activities.find((item) => item.stravaId === latestInsight.stravaActivityId) || null,
+        ),
+        latestInsight.sessionId
+          ? storage.getSession(userId, latestInsight.sessionId)
+          : Promise.resolve(null),
+        latestInsight.proposalId
+          ? db
+              .select()
+              .from(coachAdjustmentProposals)
+              .where(
+                and(
+                  eq(coachAdjustmentProposals.userId, userId),
+                  eq(coachAdjustmentProposals.id, latestInsight.proposalId),
+                ),
+              )
+              .limit(1)
+              .then((rows) => rows[0] || null)
+          : Promise.resolve(null),
+      ]);
+
+      if (!activity) {
+        return res.json(null);
+      }
+
+      const payload: LatestRideInsightResponse = {
+        insightId: latestInsight.id,
+        activity: {
+          id: activity.stravaId,
+          name: activity.name,
+          startDate: activity.startDate,
+        },
+        matchedSession: matchedSession
+          ? {
+              id: matchedSession.id,
+              label: getSessionLabel(matchedSession),
+              completed: matchedSession.completed,
+            }
+          : null,
+        summary: {
+          headline: latestInsight.headline,
+          text: latestInsight.summary,
+        },
+        metrics: normalizeInsightMetrics(latestInsight.metrics),
+        proposal: linkedProposal
+          ? {
+              id: linkedProposal.id,
+              status: linkedProposal.status,
+              activeWeek: linkedProposal.activeWeek,
+              changes: Array.isArray(linkedProposal.changes)
+                ? (linkedProposal.changes as CoachProposalApiItem[])
+                : [],
+            }
+          : null,
+      };
+
+      res.json(payload);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to load latest ride insight" });
+    }
+  });
+
+  app.post("/api/plan/realign-current-week", async (req, res) => {
+    try {
+      if (!PLAN_DATE_REALIGN_PROMPT) {
+        return res.status(404).json({ error: "Plan date realign is disabled" });
+      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [sessions, savedActiveWeek, activities] = await Promise.all([
+        storage.getSessions(userId),
+        storage.getSetting(userId, "activeWeek"),
+        storage.getStravaActivities(userId),
+      ]);
+
+      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
+      const suggestion = detectPlanDateAlignmentSuggestion({
+        sessions,
+        activities,
+        activeWeek,
+      });
+      if (!suggestion) {
+        return res.status(400).json({ error: "No date realignment needed right now" });
+      }
+
+      const pendingTargetSessions = sessions.filter(
+        (session) =>
+          session.week >= activeWeek &&
+          !session.completed &&
+          !!session.scheduledDate,
+      );
+
+      const updatedRows: Session[] = [];
+      let realignEventId = "";
+      await db.transaction(async (tx) => {
+        for (const session of pendingTargetSessions) {
+          const shiftedDate = shiftIsoDateByDays(session.scheduledDate!, suggestion.deltaDays);
+          if (!shiftedDate) continue;
+
+          const [updated] = await tx
+            .update(sessionsTable)
+            .set({ scheduledDate: shiftedDate })
+            .where(
+              and(
+                eq(sessionsTable.userId, userId),
+                eq(sessionsTable.id, session.id),
+              ),
+            )
+            .returning();
+          if (updated) {
+            updatedRows.push(updated);
+          }
+        }
+
+        const [eventRow] = await tx
+          .insert(planRealignEvents)
+          .values({
+            userId,
+            fromDate: suggestion.fromDate,
+            toDate: suggestion.toDate,
+            deltaDays: suggestion.deltaDays,
+            affectedCount: updatedRows.length,
+          })
+          .returning();
+        realignEventId = eventRow?.id || "";
+      });
+
+      res.json({
+        eventId: realignEventId,
+        deltaDays: suggestion.deltaDays,
+        affectedCount: updatedRows.length,
+        fromDate: suggestion.fromDate,
+        toDate: suggestion.toDate,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to realign plan dates" });
     }
   });
 
@@ -1607,11 +2310,15 @@ export async function registerRoutes(
         storage.getSetting(userId, usageKey),
       ]);
 
+      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
       let activities = await storage.getStravaActivities(userId);
 
       if (refreshToken && shouldSyncStravaForCoach(stravaLastSyncAt, activities.length)) {
         try {
-          await syncStravaActivities(userId, refreshToken);
+          await syncStravaActivities(userId, refreshToken, {
+            activeWeek,
+            adaptiveMatchV1: STRAVA_ADAPTIVE_MATCH_V1,
+          });
           await storage.setSetting(userId, "stravaLastSync", new Date().toISOString());
           await setStravaLastError(userId, null);
           activities = await storage.getStravaActivities(userId);
@@ -1636,7 +2343,6 @@ export async function registerRoutes(
         });
       }
 
-      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
       const context = buildCoachContext({
         sessions,
         metrics,
@@ -1653,23 +2359,16 @@ export async function registerRoutes(
         coachAdjustmentsEnabled: COACH_ADJUSTMENTS_SAFE_MODE,
       });
 
-      const ai = getGeminiClient();
-      const model = getGeminiModel("gemini-2.5-flash");
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          temperature: 0.55,
-          maxOutputTokens: 1200,
-        },
+      const coachModelResult = await generateCoachReplyWithGuardrails({
+        prompt,
+        message: parsed.data.message,
+        sessions,
+        activities,
+        metrics,
+        activeWeek,
       });
-
-      const rawResponse = response.text?.trim() || "";
-      const parsedPayload = parseCoachModelPayload(rawResponse);
-      if (COACH_ADJUSTMENTS_SAFE_MODE && !parsedPayload) {
-        console.warn("[coach-adjust] model response was not valid JSON; falling back to plain reply");
-      }
-      const reply = parsedPayload?.reply?.trim() || rawResponse;
+      const parsedPayload = coachModelResult.payload;
+      const reply = coachModelResult.reply;
       if (!reply) {
         return res.status(502).json({ error: "Coach response was empty. Please retry." });
       }
@@ -2241,4 +2940,68 @@ Return valid JSON only (no markdown, no code fences) with this exact shape:
 
 If no safe changes are needed, return an empty array for changes.
 Reply must still be concise and actionable.`;
+}
+
+function buildRideInsightPrompt(params: {
+  activity: StravaActivity;
+  matchedSession: Session | null;
+  activeWeek: number;
+  sessions: Session[];
+}): string {
+  const a = params.activity;
+  const matched = params.matchedSession
+    ? `Matched planned session [id=${params.matchedSession.id}] ${params.matchedSession.day}: ${params.matchedSession.description} (${params.matchedSession.minutes} min${params.matchedSession.zone ? ` ${params.matchedSession.zone}` : ""}).`
+    : "No planned session match found.";
+
+  const activeWeekSessions = params.sessions
+    .filter((session) => session.week === params.activeWeek)
+    .map((session) => {
+      const status = session.completed ? "done" : "planned";
+      const datePart = session.scheduledDate ? `${session.scheduledDate} ` : "";
+      const zone = session.zone ? ` ${session.zone}` : "";
+      return `- [id=${session.id}] ${datePart}${session.day}: ${session.description} (${session.minutes} min${zone}) [${status}]`;
+    })
+    .join("\n");
+
+  return `You are PeakReady ride analyst.
+Create a short, practical post-ride insight for dashboard display using ONLY provided fields.
+
+Ride data:
+- name: ${a.name}
+- startDate: ${a.startDate}
+- distanceMeters: ${a.distance ?? 0}
+- movingTimeSeconds: ${a.movingTime ?? 0}
+- elevationGainMeters: ${a.totalElevationGain ?? 0}
+- avgHeartRate: ${a.averageHeartrate ?? "n/a"}
+- maxHeartRate: ${a.maxHeartrate ?? "n/a"}
+- avgWatts: ${a.averageWatts ?? "n/a"}
+- sufferScore: ${a.sufferScore ?? "n/a"}
+
+Matched session context:
+${matched}
+
+Current active week (${params.activeWeek}) sessions:
+${activeWeekSessions || "No active-week sessions available."}
+
+Output strict JSON:
+{
+  "headline": "short string <= 120 chars",
+  "summary": "2-4 concise sentences",
+  "metrics": [{ "label": "Distance", "value": "12.1 km" }],
+  "changes": [
+    {
+      "sessionId": "active-week-session-id",
+      "minutes": 90,
+      "zone": "Z2",
+      "reason": "short reason"
+    }
+  ]
+}
+
+Rules:
+- Metrics: 4-8 chips, compact and readable.
+- Changes are optional. Use only active-week session ids shown above.
+- Allowed change fields: minutes and zone only.
+- Minutes must be between ${COACH_PROPOSAL_MIN_MINUTES} and ${COACH_PROPOSAL_MAX_MINUTES}.
+- If no safe change needed, return empty changes array.`;
 }

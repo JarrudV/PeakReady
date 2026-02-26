@@ -325,6 +325,7 @@ function MainApp() {
             activeWeek={activeWeek}
             maxWeek={maxWeek}
             onOpenPlan={() => setActiveTab("plan")}
+            onOpenCoach={() => setActiveTab("coach")}
           />
         )}
         {activeTab === "plan" && (

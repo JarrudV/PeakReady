@@ -38,6 +38,8 @@ export function StravaDashboard() {
             queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
             queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
             queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/coach/context"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/insights/latest-ride"] });
             toast({
                 title: `Synced ${data.synced} rides from Strava`,
                 description: data.autoCompleted ? `${data.autoCompleted} sessions auto-completed` : undefined,

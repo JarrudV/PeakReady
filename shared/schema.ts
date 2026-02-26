@@ -16,6 +16,8 @@ export const sessions = pgTable("sessions", {
   strength: boolean("strength").notNull().default(false),
   completed: boolean("completed").notNull().default(false),
   completionSource: text("completion_source"),
+  completedStravaActivityId: varchar("completed_strava_activity_id", { length: 64 }),
+  completionMatchScore: real("completion_match_score"),
   rpe: integer("rpe"),
   notes: text("notes"),
   scheduledDate: text("scheduled_date"),
@@ -28,6 +30,7 @@ export const sessions = pgTable("sessions", {
   primaryKey({ columns: [table.userId, table.id] }),
   index("sessions_user_id_idx").on(table.userId),
   index("sessions_adjusted_by_coach_idx").on(table.userId, table.adjustedByCoach),
+  index("sessions_completed_strava_activity_idx").on(table.userId, table.completedStravaActivityId),
 ]);
 
 export const metrics = pgTable("metrics", {
@@ -174,6 +177,50 @@ export const coachAdjustmentEventItems = pgTable("coach_adjustment_event_items",
   index("coach_adjustment_event_items_user_id_session_idx").on(table.userId, table.sessionId),
 ]);
 
+export type StravaSessionLinkConfidence = "high" | "medium";
+
+export const stravaSessionLinks = pgTable("strava_session_links", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  sessionId: varchar("session_id", { length: 64 }).notNull(),
+  stravaActivityId: varchar("strava_activity_id", { length: 64 }).notNull(),
+  dateDeltaDays: integer("date_delta_days").notNull(),
+  durationDeltaPct: real("duration_delta_pct").notNull(),
+  confidence: text("confidence").notNull().$type<StravaSessionLinkConfidence>(),
+  matchedAt: timestamp("matched_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("strava_session_links_user_session_unique_idx").on(table.userId, table.sessionId),
+  uniqueIndex("strava_session_links_user_activity_unique_idx").on(table.userId, table.stravaActivityId),
+  index("strava_session_links_user_matched_idx").on(table.userId, table.matchedAt),
+]);
+
+export const rideInsights = pgTable("ride_insights", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  stravaActivityId: varchar("strava_activity_id", { length: 64 }).notNull(),
+  sessionId: varchar("session_id", { length: 64 }),
+  proposalId: varchar("proposal_id", { length: 64 }),
+  headline: text("headline").notNull(),
+  summary: text("summary").notNull(),
+  metrics: jsonb("metrics").notNull().$type<Array<{ label: string; value: string }>>(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("ride_insights_user_created_idx").on(table.userId, table.createdAt),
+  index("ride_insights_user_activity_idx").on(table.userId, table.stravaActivityId),
+]);
+
+export const planRealignEvents = pgTable("plan_realign_events", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  fromDate: text("from_date").notNull(),
+  toDate: text("to_date").notNull(),
+  deltaDays: integer("delta_days").notNull(),
+  affectedCount: integer("affected_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("plan_realign_events_user_created_idx").on(table.userId, table.createdAt),
+]);
+
 export const pushSubscriptions = pgTable("push_subscriptions", {
   userId: text("user_id").notNull().default("__legacy__"),
   endpoint: text("endpoint").notNull(),
@@ -232,6 +279,9 @@ export const insertInAppNotificationSchema = createInsertSchema(inAppNotificatio
 export const insertCoachAdjustmentProposalSchema = createInsertSchema(coachAdjustmentProposals).omit({ userId: true, createdAt: true });
 export const insertCoachAdjustmentEventSchema = createInsertSchema(coachAdjustmentEvents).omit({ userId: true, createdAt: true });
 export const insertCoachAdjustmentEventItemSchema = createInsertSchema(coachAdjustmentEventItems).omit({ userId: true, createdAt: true });
+export const insertStravaSessionLinkSchema = createInsertSchema(stravaSessionLinks).omit({ userId: true, matchedAt: true });
+export const insertRideInsightSchema = createInsertSchema(rideInsights).omit({ userId: true, createdAt: true });
+export const insertPlanRealignEventSchema = createInsertSchema(planRealignEvents).omit({ userId: true, createdAt: true });
 
 export type Session = typeof sessions.$inferSelect;
 export type SessionCompletionSource = "manual" | "strava" | null;
@@ -254,6 +304,12 @@ export type CoachAdjustmentEvent = typeof coachAdjustmentEvents.$inferSelect;
 export type InsertCoachAdjustmentEvent = z.infer<typeof insertCoachAdjustmentEventSchema>;
 export type CoachAdjustmentEventItem = typeof coachAdjustmentEventItems.$inferSelect;
 export type InsertCoachAdjustmentEventItem = z.infer<typeof insertCoachAdjustmentEventItemSchema>;
+export type StravaSessionLink = typeof stravaSessionLinks.$inferSelect;
+export type InsertStravaSessionLink = z.infer<typeof insertStravaSessionLinkSchema>;
+export type RideInsight = typeof rideInsights.$inferSelect;
+export type InsertRideInsight = z.infer<typeof insertRideInsightSchema>;
+export type PlanRealignEvent = typeof planRealignEvents.$inferSelect;
+export type InsertPlanRealignEvent = z.infer<typeof insertPlanRealignEventSchema>;
 
 export * from "./models/chat";
 export * from "./models/auth";

@@ -68,19 +68,18 @@ function validateRuntimeEnv() {
 async function main() {
   validateRuntimeEnv();
 
-  const runMigrations = process.env.RUN_DB_PUSH_ON_START === "true";
+  const skipMigrations = process.env.SKIP_DB_PUSH_ON_START === "true";
+  if (!process.env.DATABASE_URL) {
+    console.error("[deploy] DATABASE_URL is required before startup.");
+    process.exit(1);
+  }
 
-  if (runMigrations) {
-    if (!process.env.DATABASE_URL) {
-      console.error("[deploy] RUN_DB_PUSH_ON_START=true but DATABASE_URL is not set.");
-      process.exit(1);
-    }
-
+  if (skipMigrations) {
+    console.warn("[deploy] WARNING: skipping migrations because SKIP_DB_PUSH_ON_START=true.");
+  } else {
     console.log("[deploy] Running migrations (drizzle-kit push)...");
     await runCommand("npm", ["run", "db:push"]);
     console.log("[deploy] Migrations completed.");
-  } else {
-    console.log("[deploy] Skipping migrations (set RUN_DB_PUSH_ON_START=true to enable).");
   }
 
   console.log("[deploy] Starting application...");

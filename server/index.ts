@@ -10,6 +10,7 @@ import { setupAuth, registerAuthRoutes } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startReminderScheduler } from "./reminders";
+import { verifySchemaOrThrow } from "./schema-guard";
 
 const app = express();
 const httpServer = createServer(app);
@@ -77,6 +78,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await verifySchemaOrThrow();
   await setupAuth(app);
   registerAuthRoutes(app);
   await registerRoutes(httpServer, app);

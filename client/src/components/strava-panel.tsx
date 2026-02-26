@@ -57,6 +57,8 @@ export function StravaPanel() {
       queryClient.invalidateQueries({ queryKey: ["/api/strava/activities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/strava/status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/insights/latest-ride"] });
       toast({
         title: `Synced ${data.synced} rides from Strava`,
         description: data.autoCompleted ? `${data.autoCompleted} sessions auto-completed` : undefined,
@@ -145,7 +147,7 @@ export function StravaPanel() {
           )}
           {status?.lastSync && (
             <span className="text-[9px] text-brand-muted font-mono hidden sm:inline">
-              · {new Date(status.lastSync).toLocaleDateString()}
+              - {new Date(status.lastSync).toLocaleDateString()}
             </span>
           )}
         </div>
@@ -281,3 +283,4 @@ function RideCard({ ride }: { ride: StravaActivity }) {
     </div>
   );
 }
+

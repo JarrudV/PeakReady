@@ -1,10 +1,14 @@
 import { storage } from "./storage";
 import { createHmac, timingSafeEqual } from "crypto";
-import type { InsertStravaActivity, Session } from "@shared/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { db } from "./db";
+import { sessions as sessionsTable, stravaSessionLinks, type InsertStravaActivity, type Session } from "@shared/schema";
 
 const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
-const AUTO_COMPLETE_TOLERANCE = 0.2;
+const SAME_DAY_DURATION_DELTA_MAX = 0.45;
+const ADJACENT_DAY_DURATION_DELTA_MAX = 0.25;
+const LEGACY_SAME_DAY_DURATION_DELTA_MAX = 0.2;
 const STRAVA_STATE_TTL_MS = 10 * 60 * 1000;
 
 const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
@@ -12,6 +16,59 @@ const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>()
 interface StravaStatePayload {
   userId: string;
   exp: number;
+}
+
+interface StravaApiActivity {
+  id: number;
+  name: string;
+  type: string;
+  sport_type?: string;
+  start_date: string;
+  moving_time: number;
+  elapsed_time: number;
+  distance: number;
+  total_elevation_gain: number;
+  average_speed: number;
+  max_speed: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  average_watts?: number;
+  kilojoules?: number;
+  suffer_score?: number;
+}
+
+export interface StravaSyncMatch {
+  sessionId: string;
+  stravaActivityId: string;
+  dateDeltaDays: number;
+  durationDeltaPct: number;
+  confidence: "high" | "medium";
+}
+
+interface MatchedPair {
+  session: Session;
+  activity: StravaApiActivity;
+  dateDeltaDays: number;
+  durationDeltaPct: number;
+  confidence: "high" | "medium";
+}
+
+interface AutoCompleteSummary {
+  autoCompleted: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  matches: StravaSyncMatch[];
+}
+
+export interface SyncStravaOptions {
+  activeWeek?: number | null;
+  adaptiveMatchV1?: boolean;
+}
+
+export interface SyncStravaActivitiesResult extends AutoCompleteSummary {
+  synced: number;
+  total: number;
+  latestSyncedActivityId: string | null;
 }
 
 function getStateSecret(): string {
@@ -107,25 +164,6 @@ async function getAccessToken(refreshToken: string): Promise<string> {
   return data.access_token;
 }
 
-interface StravaApiActivity {
-  id: number;
-  name: string;
-  type: string;
-  sport_type?: string;
-  start_date: string;
-  moving_time: number;
-  elapsed_time: number;
-  distance: number;
-  total_elevation_gain: number;
-  average_speed: number;
-  max_speed: number;
-  average_heartrate?: number;
-  max_heartrate?: number;
-  average_watts?: number;
-  kilojoules?: number;
-  suffer_score?: number;
-}
-
 async function fetchActivities(refreshToken: string, page = 1, perPage = 50): Promise<StravaApiActivity[]> {
   const token = await getAccessToken(refreshToken);
 
@@ -171,7 +209,8 @@ function mapActivity(a: StravaApiActivity): InsertStravaActivity {
 export async function syncStravaActivities(
   userId: string,
   refreshToken: string,
-): Promise<{ synced: number; total: number; autoCompleted: number }> {
+  options: SyncStravaOptions = {},
+): Promise<SyncStravaActivitiesResult> {
   let allActivities: StravaApiActivity[] = [];
   let page = 1;
   const perPage = 100;
@@ -181,22 +220,34 @@ export async function syncStravaActivities(
     if (batch.length === 0) break;
     allActivities = allActivities.concat(batch);
     if (batch.length < perPage) break;
-    page++;
+    page += 1;
     if (page > 5) break;
   }
 
-  const rideTypes = ["Ride", "VirtualRide", "MountainBikeRide", "GravelRide", "EBikeRide"];
-  const rides = allActivities.filter((a) => rideTypes.includes(a.type));
+  const rideTypes = new Set(["Ride", "VirtualRide", "MountainBikeRide", "GravelRide", "EBikeRide"]);
+  const rides = allActivities.filter((a) => rideTypes.has(a.type));
 
   let synced = 0;
   for (const ride of rides) {
     await storage.upsertStravaActivity(userId, mapActivity(ride));
-    synced++;
+    synced += 1;
   }
 
-  const autoCompleted = await autoCompleteSessionsFromActivities(userId, rides);
+  const latestSyncedActivityId = rides
+    .slice()
+    .sort((a, b) => b.start_date.localeCompare(a.start_date))[0]?.id;
 
-  return { synced, total: allActivities.length, autoCompleted };
+  const autoComplete = await autoCompleteSessionsFromActivities(userId, rides, {
+    activeWeek: options.activeWeek,
+    adaptiveMatchV1: options.adaptiveMatchV1 !== false,
+  });
+
+  return {
+    synced,
+    total: allActivities.length,
+    latestSyncedActivityId: latestSyncedActivityId ? String(latestSyncedActivityId) : null,
+    ...autoComplete,
+  };
 }
 
 export function isStravaConfigured(): boolean {
@@ -210,35 +261,72 @@ function toDateOnly(isoString: string): string {
   return isoString.slice(0, 10);
 }
 
+function toUtcMidnightMs(dateOnly: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null;
+  const parsed = Date.parse(`${dateOnly}T00:00:00.000Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getDateDeltaDays(sessionDate: string, activityStartDate: string): number | null {
+  const sessionMs = toUtcMidnightMs(sessionDate);
+  const activityMs = toUtcMidnightMs(toDateOnly(activityStartDate));
+  if (sessionMs === null || activityMs === null) return null;
+  return Math.round((activityMs - sessionMs) / 86_400_000);
+}
+
 function getActivityDurationSeconds(activity: StravaApiActivity): number {
   return activity.moving_time || activity.elapsed_time || 0;
 }
 
-async function autoCompleteSessionsFromActivities(userId: string, activities: StravaApiActivity[]): Promise<number> {
-  const sessions = await storage.getSessions(userId);
+function resolveActiveWeek(sessions: Session[], preferredWeek: number | null | undefined): number {
+  const weeks = Array.from(new Set(sessions.map((session) => session.week))).sort((a, b) => a - b);
+  if (weeks.length === 0) return 1;
 
-  const candidateSessions = sessions.filter(
+  if (
+    typeof preferredWeek === "number" &&
+    Number.isFinite(preferredWeek) &&
+    preferredWeek > 0 &&
+    weeks.includes(preferredWeek)
+  ) {
+    return preferredWeek;
+  }
+
+  for (const week of weeks) {
+    const weekSessions = sessions.filter((session) => session.week === week);
+    if (weekSessions.some((session) => !session.completed)) {
+      return week;
+    }
+  }
+
+  return weeks[0];
+}
+
+function buildMatchCandidates(params: {
+  sessions: Session[];
+  activities: StravaApiActivity[];
+  activeWeek: number;
+  adaptiveMatchV1: boolean;
+  blockedActivityIds: Set<string>;
+}): MatchedPair[] {
+  const pairs: MatchedPair[] = [];
+
+  const candidateSessions = params.sessions.filter(
     (session) =>
       !session.completed &&
+      !session.completedStravaActivityId &&
+      session.week === params.activeWeek &&
       !!session.scheduledDate &&
       (session.type === "Ride" || session.type === "Long Ride") &&
       session.minutes > 0,
   );
 
-  if (candidateSessions.length === 0 || activities.length === 0) {
-    return 0;
-  }
-
-  const pairs: Array<{
-    session: Session;
-    activity: StravaApiActivity;
-    ratioDelta: number;
-  }> = [];
-
   for (const session of candidateSessions) {
     const plannedSeconds = session.minutes * 60;
-    for (const activity of activities) {
-      if (toDateOnly(activity.start_date) !== session.scheduledDate) {
+    if (!plannedSeconds) continue;
+
+    for (const activity of params.activities) {
+      const activityId = String(activity.id);
+      if (params.blockedActivityIds.has(activityId)) {
         continue;
       }
 
@@ -247,28 +335,104 @@ async function autoCompleteSessionsFromActivities(userId: string, activities: St
         continue;
       }
 
-      const ratioDelta = Math.abs(activitySeconds - plannedSeconds) / plannedSeconds;
-      if (ratioDelta <= AUTO_COMPLETE_TOLERANCE) {
-        pairs.push({
-          session,
-          activity,
-          ratioDelta,
-        });
+      const dateDeltaDays = getDateDeltaDays(session.scheduledDate!, activity.start_date);
+      if (dateDeltaDays === null) continue;
+
+      const absDateDelta = Math.abs(dateDeltaDays);
+      let allowedDurationDelta: number | null = null;
+      let confidence: "high" | "medium" = "high";
+
+      if (params.adaptiveMatchV1) {
+        if (absDateDelta === 0) {
+          allowedDurationDelta = SAME_DAY_DURATION_DELTA_MAX;
+          confidence = "high";
+        } else if (absDateDelta === 1) {
+          allowedDurationDelta = ADJACENT_DAY_DURATION_DELTA_MAX;
+          confidence = "medium";
+        }
+      } else if (absDateDelta === 0) {
+        allowedDurationDelta = LEGACY_SAME_DAY_DURATION_DELTA_MAX;
+        confidence = "high";
       }
+
+      if (allowedDurationDelta === null) continue;
+
+      const durationDeltaPct = Math.abs(activitySeconds - plannedSeconds) / plannedSeconds;
+      if (durationDeltaPct > allowedDurationDelta) continue;
+
+      pairs.push({
+        session,
+        activity,
+        dateDeltaDays,
+        durationDeltaPct,
+        confidence,
+      });
     }
   }
+
+  return pairs;
+}
+
+async function autoCompleteSessionsFromActivities(
+  userId: string,
+  activities: StravaApiActivity[],
+  options: { activeWeek?: number | null; adaptiveMatchV1: boolean },
+): Promise<AutoCompleteSummary> {
+  if (activities.length === 0) {
+    return {
+      autoCompleted: 0,
+      matchedCount: 0,
+      unmatchedCount: 0,
+      matches: [],
+    };
+  }
+
+  const sessions = await storage.getSessions(userId);
+  const activeWeek = resolveActiveWeek(sessions, options.activeWeek);
+  const activityIds = activities.map((activity) => String(activity.id));
+
+  const existingLinks = activityIds.length
+    ? await db
+        .select({
+          sessionId: stravaSessionLinks.sessionId,
+          stravaActivityId: stravaSessionLinks.stravaActivityId,
+        })
+        .from(stravaSessionLinks)
+        .where(
+          and(
+            eq(stravaSessionLinks.userId, userId),
+            inArray(stravaSessionLinks.stravaActivityId, activityIds),
+          ),
+        )
+    : [];
+  const blockedActivityIds = new Set(existingLinks.map((row) => row.stravaActivityId));
+
+  const pairs = buildMatchCandidates({
+    sessions,
+    activities,
+    activeWeek,
+    adaptiveMatchV1: options.adaptiveMatchV1,
+    blockedActivityIds,
+  });
 
   if (pairs.length === 0) {
-    return 0;
+    return {
+      autoCompleted: 0,
+      matchedCount: 0,
+      unmatchedCount: Math.max(0, activities.length - blockedActivityIds.size),
+      matches: [],
+    };
   }
 
-  // Deterministic matching: best duration fit first, then stable tie-breakers.
+  // Deterministic ordering: closest date, then closest duration, then stable ids.
   pairs.sort((a, b) => {
-    if (a.ratioDelta !== b.ratioDelta) {
-      return a.ratioDelta - b.ratioDelta;
+    const aDate = Math.abs(a.dateDeltaDays);
+    const bDate = Math.abs(b.dateDeltaDays);
+    if (aDate !== bDate) {
+      return aDate - bDate;
     }
-    if (a.activity.start_date !== b.activity.start_date) {
-      return a.activity.start_date.localeCompare(b.activity.start_date);
+    if (a.durationDeltaPct !== b.durationDeltaPct) {
+      return a.durationDeltaPct - b.durationDeltaPct;
     }
     if (a.session.id !== b.session.id) {
       return a.session.id.localeCompare(b.session.id);
@@ -277,27 +441,73 @@ async function autoCompleteSessionsFromActivities(userId: string, activities: St
   });
 
   const usedSessionIds = new Set<string>();
-  const usedActivityIds = new Set<number>();
-  const selected = pairs.filter((pair) => {
-    if (usedSessionIds.has(pair.session.id) || usedActivityIds.has(pair.activity.id)) {
-      return false;
+  const usedActivityIds = new Set<string>(blockedActivityIds);
+  const selected: MatchedPair[] = [];
+
+  for (const pair of pairs) {
+    const activityId = String(pair.activity.id);
+    if (usedSessionIds.has(pair.session.id) || usedActivityIds.has(activityId)) {
+      continue;
     }
     usedSessionIds.add(pair.session.id);
-    usedActivityIds.add(pair.activity.id);
-    return true;
+    usedActivityIds.add(activityId);
+    selected.push(pair);
+  }
+
+  if (selected.length === 0) {
+    return {
+      autoCompleted: 0,
+      matchedCount: 0,
+      unmatchedCount: Math.max(0, activities.length - blockedActivityIds.size),
+      matches: [],
+    };
+  }
+
+  await db.transaction(async (tx) => {
+    for (const pair of selected) {
+      const stravaActivityId = String(pair.activity.id);
+      const matchScore = Math.max(0, Math.min(1, 1 - pair.durationDeltaPct));
+      const completedAt = pair.activity.start_date;
+
+      await tx
+        .update(sessionsTable)
+        .set({
+          completed: true,
+          completedAt,
+          completionSource: "strava",
+          completedStravaActivityId: stravaActivityId,
+          completionMatchScore: matchScore,
+        })
+        .where(and(eq(sessionsTable.userId, userId), eq(sessionsTable.id, pair.session.id)));
+
+      await tx
+        .insert(stravaSessionLinks)
+        .values({
+          userId,
+          sessionId: pair.session.id,
+          stravaActivityId,
+          dateDeltaDays: pair.dateDeltaDays,
+          durationDeltaPct: pair.durationDeltaPct,
+          confidence: pair.confidence,
+        })
+        .onConflictDoNothing();
+    }
   });
 
-  await Promise.all(
-    selected.map((pair) =>
-      storage.updateSession(userId, pair.session.id, {
-        completed: true,
-        completedAt: pair.activity.start_date,
-        completionSource: "strava",
-      }),
-    ),
-  );
+  const matches = selected.map((pair) => ({
+    sessionId: pair.session.id,
+    stravaActivityId: String(pair.activity.id),
+    dateDeltaDays: pair.dateDeltaDays,
+    durationDeltaPct: Number(pair.durationDeltaPct.toFixed(4)),
+    confidence: pair.confidence,
+  }));
 
-  return selected.length;
+  return {
+    autoCompleted: selected.length,
+    matchedCount: selected.length,
+    unmatchedCount: Math.max(0, activities.length - selected.length - blockedActivityIds.size),
+    matches,
+  };
 }
 
 export function getStravaAuthUrl(redirectUri: string, state?: string): string {

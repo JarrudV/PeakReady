@@ -115,6 +115,33 @@ function formatChangeSummary(change: CoachProposalChange): string {
   return `${change.before.minutes}min${beforeZone} -> ${change.after.minutes}min${afterZone}`;
 }
 
+function normalizeAssistantContent(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return raw;
+
+  const candidates = [trimmed];
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    candidates.push(fenced[1].trim());
+  }
+
+  for (const candidate of candidates) {
+    if (!(candidate.startsWith("{") && candidate.endsWith("}"))) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(candidate) as { reply?: unknown };
+      if (typeof parsed.reply === "string" && parsed.reply.trim()) {
+        return parsed.reply.trim();
+      }
+    } catch {
+      // Keep original message if parsing fails.
+    }
+  }
+
+  return raw;
+}
+
 export function CoachPage({ onUpgrade }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [proposal, setProposal] = useState<CoachProposal | null>(null);
@@ -241,7 +268,7 @@ export function CoachPage({ onUpgrade }: Props) {
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: data.reply || "I could not generate a response. Please try again.",
+        content: normalizeAssistantContent(data.reply || "I could not generate a response. Please try again."),
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -330,7 +357,10 @@ export function CoachPage({ onUpgrade }: Props) {
   };
 
   return (
-    <div className="px-1 py-2 space-y-3 min-h-[70dvh] flex flex-col" data-testid="coach-page">
+    <div
+      className="px-1 py-2 flex h-[calc(100dvh-12.5rem)] min-h-[520px] flex-col gap-3 overflow-hidden"
+      data-testid="coach-page"
+    >
       <div className="flex-none">
         <h2 className="text-base font-semibold text-brand-text" data-testid="text-coach-title">
           Ask your coach
@@ -438,7 +468,7 @@ export function CoachPage({ onUpgrade }: Props) {
                 className="flex-1 min-h-[36px] rounded-md bg-brand-success/15 border border-brand-success/30 text-brand-success font-medium disabled:opacity-60"
                 data-testid="button-apply-coach-proposal"
               >
-                ✅ Apply
+                Apply
               </button>
               <button
                 type="button"
@@ -447,7 +477,7 @@ export function CoachPage({ onUpgrade }: Props) {
                 className="flex-1 min-h-[36px] rounded-md bg-brand-danger/12 border border-brand-danger/30 text-brand-danger font-medium disabled:opacity-60"
                 data-testid="button-cancel-coach-proposal"
               >
-                ❌ Cancel
+                Cancel
               </button>
             </div>
           ) : (
@@ -462,7 +492,7 @@ export function CoachPage({ onUpgrade }: Props) {
 
       <div
         ref={scrollRef}
-        className="glass-panel p-2.5 flex-1 min-h-[240px] overflow-y-auto overscroll-y-contain space-y-2.5 border-brand-border/45"
+        className="glass-panel p-2.5 flex-1 min-h-0 overflow-y-auto overscroll-y-contain space-y-2.5 border-brand-border/45"
         data-testid="coach-message-list"
       >
         {messages.map((message) => (
@@ -479,7 +509,7 @@ export function CoachPage({ onUpgrade }: Props) {
               {message.role === "assistant" ? <Bot size={11} /> : <User size={11} />}
               {message.role === "assistant" ? "Coach" : "You"}
             </div>
-            {message.content}
+            {message.role === "assistant" ? normalizeAssistantContent(message.content) : message.content}
           </div>
         ))}
         {isSending && (
@@ -491,7 +521,7 @@ export function CoachPage({ onUpgrade }: Props) {
 
       <form
         onSubmit={sendMessage}
-        className="glass-panel p-2.5 border-brand-border/45 flex-none"
+        className="glass-panel p-2.5 border-brand-border/45 flex-none pb-[max(env(safe-area-inset-bottom),0px)]"
         data-testid="coach-chat-form"
       >
         <div className="flex gap-2 items-end">

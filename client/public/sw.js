@@ -21,6 +21,8 @@ const API_CACHE_ALLOWLIST = [
   "/api/settings/",
   "/api/strava/status",
   "/api/strava/activities",
+  "/api/coach/context",
+  "/api/insights/latest-ride",
   "/api/plan/templates",
 ];
 const API_BYPASS_PREFIXES = ["/api/auth/", "/api/logout", "/api/strava/auth-url", "/api/strava/callback"];
