@@ -38,6 +38,7 @@ export interface IStorage {
 
   getMetrics(userId: string): Promise<Metric[]>;
   upsertMetric(userId: string, metric: InsertMetric): Promise<Metric>;
+  updateMetric(userId: string, id: string, metric: Partial<InsertMetric>): Promise<Metric | undefined>;
   deleteMetric(userId: string, id: string): Promise<boolean>;
 
   getServiceItems(userId: string): Promise<ServiceItem[]>;
@@ -244,6 +245,31 @@ export class DatabaseStorage implements IStorage {
           notes: row.notes ?? null,
         },
       })
+      .returning();
+
+    return result;
+  }
+
+  async updateMetric(userId: string, id: string, metric: Partial<InsertMetric>): Promise<Metric | undefined> {
+    await this.claimLegacyRowsForUser(userId);
+
+    const updates: Partial<Metric> = {};
+    if (metric.date !== undefined) updates.date = normalizeMetricDate(metric.date);
+    if (metric.weightKg !== undefined) updates.weightKg = metric.weightKg;
+    if (metric.restingHr !== undefined) updates.restingHr = metric.restingHr;
+    if (metric.rideMinutes !== undefined) updates.rideMinutes = metric.rideMinutes;
+    if (metric.longRideKm !== undefined) updates.longRideKm = metric.longRideKm;
+    if (metric.fatigue !== undefined) updates.fatigue = metric.fatigue;
+    if (metric.notes !== undefined) updates.notes = metric.notes;
+
+    if (Object.keys(updates).length === 0) {
+      return this.getMetrics(userId).then((all) => all.find((item) => item.id === id));
+    }
+
+    const [result] = await db
+      .update(metrics)
+      .set(updates)
+      .where(and(eq(metrics.userId, userId), eq(metrics.id, id)))
       .returning();
 
     return result;

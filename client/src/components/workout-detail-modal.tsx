@@ -186,6 +186,13 @@ export function WorkoutDetailModal({
                   <span className="text-[11px] text-brand-success/90">Completed</span>
                 </div>
               )}
+              {session.adjustedByCoach && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full border border-brand-primary/35 bg-brand-primary/12 text-brand-primary">
+                    Adjusted by Coach
+                  </span>
+                </div>
+              )}
             </div>
             <h2 className="text-lg font-semibold text-brand-text leading-snug">
               {session.description}

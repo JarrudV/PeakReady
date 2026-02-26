@@ -21,9 +21,13 @@ export const sessions = pgTable("sessions", {
   scheduledDate: text("scheduled_date"),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
   detailsMarkdown: text("details_markdown"),
+  adjustedByCoach: boolean("adjusted_by_coach").notNull().default(false),
+  adjustedByCoachAt: timestamp("adjusted_by_coach_at", { withTimezone: true, mode: "string" }),
+  lastCoachAdjustmentEventId: varchar("last_coach_adjustment_event_id", { length: 64 }),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.id] }),
   index("sessions_user_id_idx").on(table.userId),
+  index("sessions_adjusted_by_coach_idx").on(table.userId, table.adjustedByCoach),
 ]);
 
 export const metrics = pgTable("metrics", {
@@ -107,6 +111,69 @@ export const appSettings = pgTable("app_settings", {
   index("app_settings_user_id_idx").on(table.userId),
 ]);
 
+export type CoachAdjustmentProposalStatus = "pending" | "applied" | "cancelled" | "expired";
+export type CoachAdjustmentEventItemStatus = "applied" | "skipped";
+
+export interface CoachAdjustmentChange {
+  sessionId: string;
+  sessionLabel: string;
+  before: {
+    minutes: number;
+    zone: string | null;
+  };
+  after: {
+    minutes: number;
+    zone: string | null;
+  };
+  reason: string;
+}
+
+export const coachAdjustmentProposals = pgTable("coach_adjustment_proposals", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  activeWeek: integer("active_week").notNull(),
+  status: text("status").notNull().$type<CoachAdjustmentProposalStatus>().default("pending"),
+  changes: jsonb("changes").$type<CoachAdjustmentChange[]>().notNull(),
+  sourceUserMessage: text("source_user_message").notNull(),
+  coachReply: text("coach_reply").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("coach_adjustment_proposals_user_id_created_idx").on(table.userId, table.createdAt),
+  index("coach_adjustment_proposals_user_id_status_idx").on(table.userId, table.status),
+]);
+
+export const coachAdjustmentEvents = pgTable("coach_adjustment_events", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  proposalId: varchar("proposal_id", { length: 64 }).notNull(),
+  activeWeek: integer("active_week").notNull(),
+  appliedCount: integer("applied_count").notNull(),
+  skippedCount: integer("skipped_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("coach_adjustment_events_user_id_created_idx").on(table.userId, table.createdAt),
+  index("coach_adjustment_events_user_id_proposal_idx").on(table.userId, table.proposalId),
+]);
+
+export const coachAdjustmentEventItems = pgTable("coach_adjustment_event_items", {
+  id: varchar("id", { length: 64 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull().default("__legacy__"),
+  eventId: varchar("event_id", { length: 64 }).notNull(),
+  sessionId: varchar("session_id", { length: 64 }).notNull(),
+  status: text("status").notNull().$type<CoachAdjustmentEventItemStatus>(),
+  skipReason: text("skip_reason"),
+  beforeMinutes: integer("before_minutes"),
+  afterMinutes: integer("after_minutes"),
+  beforeZone: text("before_zone"),
+  afterZone: text("after_zone"),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+}, (table) => [
+  index("coach_adjustment_event_items_user_id_event_idx").on(table.userId, table.eventId),
+  index("coach_adjustment_event_items_user_id_session_idx").on(table.userId, table.sessionId),
+]);
+
 export const pushSubscriptions = pgTable("push_subscriptions", {
   userId: text("user_id").notNull().default("__legacy__"),
   endpoint: text("endpoint").notNull(),
@@ -162,6 +229,9 @@ export const insertStravaActivitySchema = createInsertSchema(stravaActivities).o
 export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions).omit({ userId: true, createdAt: true, updatedAt: true });
 export const insertReminderSettingsSchema = createInsertSchema(reminderSettings).omit({ userId: true, createdAt: true, updatedAt: true });
 export const insertInAppNotificationSchema = createInsertSchema(inAppNotifications).omit({ id: true, userId: true, createdAt: true, readAt: true });
+export const insertCoachAdjustmentProposalSchema = createInsertSchema(coachAdjustmentProposals).omit({ userId: true, createdAt: true });
+export const insertCoachAdjustmentEventSchema = createInsertSchema(coachAdjustmentEvents).omit({ userId: true, createdAt: true });
+export const insertCoachAdjustmentEventItemSchema = createInsertSchema(coachAdjustmentEventItems).omit({ userId: true, createdAt: true });
 
 export type Session = typeof sessions.$inferSelect;
 export type SessionCompletionSource = "manual" | "strava" | null;
@@ -178,6 +248,12 @@ export type PushSubscriptionRecord = typeof pushSubscriptions.$inferSelect;
 export type ReminderSettings = typeof reminderSettings.$inferSelect;
 export type InAppNotification = typeof inAppNotifications.$inferSelect;
 export type NotificationDispatch = typeof notificationDispatches.$inferSelect;
+export type CoachAdjustmentProposal = typeof coachAdjustmentProposals.$inferSelect;
+export type InsertCoachAdjustmentProposal = z.infer<typeof insertCoachAdjustmentProposalSchema>;
+export type CoachAdjustmentEvent = typeof coachAdjustmentEvents.$inferSelect;
+export type InsertCoachAdjustmentEvent = z.infer<typeof insertCoachAdjustmentEventSchema>;
+export type CoachAdjustmentEventItem = typeof coachAdjustmentEventItems.$inferSelect;
+export type InsertCoachAdjustmentEventItem = z.infer<typeof insertCoachAdjustmentEventItemSchema>;
 
 export * from "./models/chat";
 export * from "./models/auth";

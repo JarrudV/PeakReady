@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { format, parseISO, subDays } from "date-fns";
-import { HeartPulse, Plus, Trash2, Weight, X } from "lucide-react";
+import { HeartPulse, Pencil, Plus, Trash2, Weight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -85,6 +85,7 @@ function getRecentZoneTotals(sessions: Session[]) {
 
 export function Metrics({ metrics, sessions }: Props) {
   const [isAdding, setIsAdding] = useState(false);
+  const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const { toast } = useToast();
   const { data: stravaActivities = [] } = useQuery<StravaActivity[]>({
     queryKey: ["/api/strava/activities"],
@@ -134,9 +135,39 @@ export function Metrics({ metrics, sessions }: Props) {
       await apiRequest("POST", "/api/metrics", entry);
       await queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
       setIsAdding(false);
+      setEditingMetric(null);
       toast({ title: "Metrics saved" });
-    } catch {
-      toast({ title: "Failed to save metrics", variant: "destructive" });
+    } catch (err: any) {
+      toast({
+        title: "Failed to save metrics",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditEntry = async (
+    metricId: string,
+    entry: {
+      date: string;
+      weightKg?: number;
+      restingHr?: number;
+      fatigue?: number;
+      notes?: string;
+    },
+  ) => {
+    try {
+      await apiRequest("PATCH", `/api/metrics/${metricId}`, entry);
+      await queryClient.invalidateQueries({ queryKey: ["/api/metrics"] });
+      setEditingMetric(null);
+      setIsAdding(false);
+      toast({ title: "Metric updated" });
+    } catch (err: any) {
+      toast({
+        title: "Failed to update metric",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -159,23 +190,50 @@ export function Metrics({ metrics, sessions }: Props) {
           Stats
         </h2>
         <button
-          onClick={() => setIsAdding((prev) => !prev)}
+          onClick={() => {
+            if (isAdding || editingMetric) {
+              setIsAdding(false);
+              setEditingMetric(null);
+              return;
+            }
+            setEditingMetric(null);
+            setIsAdding(true);
+          }}
           className={cn(
             "min-h-[40px] rounded-lg border border-brand-border/45 px-3 text-xs font-medium transition-colors",
-            isAdding ? "bg-brand-panel-2/35 text-brand-text" : "bg-brand-panel/35 text-brand-primary",
+            isAdding || editingMetric
+              ? "bg-brand-panel-2/35 text-brand-text"
+              : "bg-brand-panel/35 text-brand-primary",
           )}
           data-testid="button-toggle-add-metric"
         >
           <span className="inline-flex items-center gap-1.5">
-            {isAdding ? <X size={15} /> : <Plus size={15} />}
-            {isAdding ? "Close" : "Add"}
+            {isAdding || editingMetric ? <X size={15} /> : <Plus size={15} />}
+            {isAdding || editingMetric ? "Close" : "Add"}
           </span>
         </button>
       </div>
 
-      {isAdding && <AddMetricForm onAdd={handleAddEntry} onCancel={() => setIsAdding(false)} />}
+      {(isAdding || editingMetric) && (
+        <AddMetricForm
+          key={editingMetric ? editingMetric.id : "new"}
+          initialMetric={editingMetric || undefined}
+          title={editingMetric ? "Edit metric entry" : "Log daily metrics"}
+          submitLabel={editingMetric ? "Save changes" : "Save metrics"}
+          onAdd={(entry) => {
+            if (editingMetric) {
+              return handleEditEntry(editingMetric.id, entry);
+            }
+            return handleAddEntry(entry);
+          }}
+          onCancel={() => {
+            setIsAdding(false);
+            setEditingMetric(null);
+          }}
+        />
+      )}
 
-      {!isAdding && (
+      {!isAdding && !editingMetric && (
         <>
           <section className="grid grid-cols-2 gap-2" data-testid="stats-summary">
             <SummaryCard
@@ -334,6 +392,18 @@ export function Metrics({ metrics, sessions }: Props) {
                       )}
                       <button
                         type="button"
+                        onClick={() => {
+                          setIsAdding(false);
+                          setEditingMetric(metric);
+                        }}
+                        className="p-1.5 rounded-md text-brand-muted hover:text-brand-primary hover:bg-brand-primary/10 transition-colors"
+                        aria-label={`Edit metric for ${format(parseISO(metric.date), "MMM d, yyyy")}`}
+                        data-testid={`button-edit-metric-${metric.id}`}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDeleteEntry(metric.id)}
                         className="p-1.5 rounded-md text-brand-muted hover:text-brand-danger hover:bg-brand-danger/10 transition-colors"
                         aria-label={`Delete metric for ${format(parseISO(metric.date), "MMM d, yyyy")}`}
@@ -430,9 +500,15 @@ function buildPlannedVsActualSeries(sessions: Session[], activities: StravaActiv
 }
 
 function AddMetricForm({
+  initialMetric,
+  title,
+  submitLabel,
   onAdd,
   onCancel,
 }: {
+  initialMetric?: Metric;
+  title?: string;
+  submitLabel?: string;
   onAdd: (entry: {
     date: string;
     weightKg?: number;
@@ -443,11 +519,17 @@ function AddMetricForm({
   onCancel: () => void;
 }) {
   const today = new Date().toISOString().split("T")[0];
-  const [date, setDate] = useState(today);
-  const [weightKg, setWeightKg] = useState("");
-  const [restingHr, setRestingHr] = useState("");
-  const [fatigue, setFatigue] = useState("5");
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(initialMetric?.date || today);
+  const [weightKg, setWeightKg] = useState(
+    initialMetric?.weightKg != null ? String(initialMetric.weightKg) : "",
+  );
+  const [restingHr, setRestingHr] = useState(
+    initialMetric?.restingHr != null ? String(initialMetric.restingHr) : "",
+  );
+  const [fatigue, setFatigue] = useState(
+    initialMetric?.fatigue != null ? String(initialMetric.fatigue) : "5",
+  );
+  const [notes, setNotes] = useState(initialMetric?.notes || "");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -466,7 +548,7 @@ function AddMetricForm({
       className="rounded-xl border border-brand-border/35 bg-brand-panel/35 p-4"
       data-testid="form-add-metric"
     >
-      <h3 className="text-base font-semibold mb-3 text-brand-text">Log daily metrics</h3>
+      <h3 className="text-base font-semibold mb-3 text-brand-text">{title || "Log daily metrics"}</h3>
       <div className="space-y-3.5">
         <div>
           <label className="text-xs text-brand-muted font-medium block mb-1">Date</label>
@@ -574,7 +656,7 @@ function AddMetricForm({
             className="flex-1 py-2.5 bg-brand-primary text-brand-bg rounded-lg font-semibold"
             data-testid="button-save-metric"
           >
-            Save metrics
+            {submitLabel || "Save metrics"}
           </button>
         </div>
       </div>

@@ -148,6 +148,11 @@ export function Dashboard({ sessions, activeWeek, maxWeek, onOpenPlan }: Props) 
               <p className="text-sm text-brand-muted">
                 {nextRide.minutes} min - {effortTypeForSession(nextRide)}
               </p>
+              {nextRide.adjustedByCoach && (
+                <p className="inline-flex items-center mt-1 rounded-full border border-brand-primary/35 bg-brand-primary/12 px-2 py-0.5 text-[11px] text-brand-primary">
+                  Adjusted by Coach
+                </p>
+              )}
             </div>
             <button
               type="button"

@@ -1,11 +1,20 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
+import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "./storage";
+import { db } from "./db";
 import {
+  sessions as sessionsTable,
+  coachAdjustmentProposals,
+  coachAdjustmentEvents,
+  coachAdjustmentEventItems,
   insertMetricSchema,
   insertServiceItemSchema,
   insertGoalEventSchema,
+  type CoachAdjustmentChange,
+  type CoachAdjustmentProposal,
+  type CoachAdjustmentProposalStatus,
   type Metric,
   type Session,
   type StravaActivity,
@@ -139,7 +148,53 @@ const coachChatSchema = z.object({
   history: z.array(coachHistoryItemSchema).max(20).optional().default([]),
 });
 
-const FREE_COACH_MONTHLY_LIMIT = 1;
+const metricUpdateSchema = insertMetricSchema
+  .partial()
+  .refine((payload) => Object.keys(payload).length > 0, "At least one field is required");
+
+const FREE_COACH_MONTHLY_LIMIT = 5;
+const COACH_STRAVA_SYNC_INTERVAL_HOURS = 6;
+const COACH_ADJUSTMENTS_SAFE_MODE = process.env.COACH_ADJUSTMENTS_SAFE_MODE !== "false";
+const COACH_PROPOSAL_TTL_HOURS = 24;
+const COACH_PROPOSAL_MAX_CHANGES = 3;
+const COACH_PROPOSAL_MIN_MINUTES = 20;
+const COACH_PROPOSAL_MAX_MINUTES = 300;
+const COACH_ZONE_PATTERN = /^[A-Za-z0-9+\-/ ]{1,24}$/;
+
+interface CoachModelSuggestedChange {
+  sessionId?: string;
+  minutes?: number;
+  zone?: string | null;
+  reason?: string;
+}
+
+interface CoachModelPayload {
+  reply?: string;
+  changes?: CoachModelSuggestedChange[];
+}
+
+interface CoachProposalApiItem {
+  sessionId: string;
+  sessionLabel: string;
+  before: {
+    minutes: number;
+    zone: string | null;
+  };
+  after: {
+    minutes: number;
+    zone: string | null;
+  };
+  reason: string;
+}
+
+interface CoachProposalApiResponse {
+  id: string;
+  activeWeek: number;
+  status: CoachAdjustmentProposalStatus;
+  createdAt: string;
+  expiresAt: string;
+  changes: CoachProposalApiItem[];
+}
 
 function requireUserId(req: Request, res: Response): string | null {
   const userId = (req as any)?.user?.claims?.sub;
@@ -181,6 +236,166 @@ function getCoachUsageSettingKey(monthKey: string): string {
 
 function normalizeSubscriptionTier(raw: string | null): "free" | "pro" {
   return raw === "pro" ? "pro" : "free";
+}
+
+function shouldSyncStravaForCoach(lastSyncAt: string | null, activityCount: number): boolean {
+  if (activityCount === 0) return true;
+  if (!lastSyncAt) return true;
+  const parsed = safeDate(lastSyncAt);
+  if (!parsed) return true;
+
+  const elapsedMs = Date.now() - parsed.getTime();
+  return elapsedMs >= COACH_STRAVA_SYNC_INTERVAL_HOURS * 60 * 60 * 1000;
+}
+
+function getDayOrder(day: string | null | undefined): number {
+  const normalized = (day || "").slice(0, 3).toLowerCase();
+  const idx = WEEKDAY_ORDER.indexOf(normalized);
+  return idx >= 0 ? idx : 99;
+}
+
+function getTodayOrder(): number {
+  const d = new Date().getDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+function normalizeZoneValue(zone: string | null | undefined): string | null {
+  if (zone === undefined || zone === null) return null;
+  const trimmed = zone.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\s+/g, " ");
+}
+
+function isValidCoachZone(zone: string | null): boolean {
+  if (zone === null) return true;
+  return COACH_ZONE_PATTERN.test(zone);
+}
+
+function getSessionLabel(session: Session): string {
+  return session.scheduledDate ? `${session.day} (${session.scheduledDate})` : session.day;
+}
+
+function isFutureSessionForCoach(session: Session, activeWeek: number, todayIso: string, todayOrder: number): boolean {
+  if (session.week !== activeWeek) return false;
+  if (session.completed) return false;
+  if (session.scheduledDate) return session.scheduledDate >= todayIso;
+  return getDayOrder(session.day) >= todayOrder;
+}
+
+function toCoachProposalApiResponse(proposal: CoachAdjustmentProposal): CoachProposalApiResponse {
+  const changes = Array.isArray(proposal.changes) ? (proposal.changes as CoachProposalApiItem[]) : [];
+  return {
+    id: proposal.id,
+    activeWeek: proposal.activeWeek,
+    status: proposal.status,
+    createdAt: proposal.createdAt,
+    expiresAt: proposal.expiresAt,
+    changes,
+  };
+}
+
+function parseCoachModelPayload(raw: string): CoachModelPayload | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const candidates: string[] = [trimmed];
+
+  const fencedMatches = Array.from(trimmed.matchAll(/```json\s*([\s\S]*?)```/gi));
+  for (const match of fencedMatches) {
+    if (match[1]) candidates.push(match[1].trim());
+  }
+
+  const taggedMatch = trimmed.match(/<coach_json>([\s\S]*?)<\/coach_json>/i);
+  if (taggedMatch?.[1]) candidates.push(taggedMatch[1].trim());
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as CoachModelPayload;
+      if (!parsed || typeof parsed !== "object") continue;
+      if (typeof parsed.reply !== "string" && !Array.isArray(parsed.changes)) continue;
+      return parsed;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
+function buildValidatedCoachProposalChanges(
+  suggestedChanges: CoachModelSuggestedChange[],
+  eligibleSessions: Session[],
+): CoachAdjustmentChange[] {
+  const byId = new Map(eligibleSessions.map((session) => [session.id, session]));
+  const accepted: CoachAdjustmentChange[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of suggestedChanges) {
+    if (accepted.length >= COACH_PROPOSAL_MAX_CHANGES) break;
+    if (!item || typeof item.sessionId !== "string") continue;
+    const sessionId = item.sessionId.trim();
+    if (!sessionId || seenIds.has(sessionId)) continue;
+
+    const session = byId.get(sessionId);
+    if (!session) continue;
+
+    const minutesRaw = item.minutes;
+    const zoneRaw = item.zone;
+    const reason = typeof item.reason === "string" ? item.reason.trim() : "";
+    if (!reason) continue;
+
+    const resolvedMinutes =
+      minutesRaw === undefined || minutesRaw === null ? session.minutes : Math.round(Number(minutesRaw));
+    if (!Number.isFinite(resolvedMinutes)) continue;
+    if (resolvedMinutes < COACH_PROPOSAL_MIN_MINUTES || resolvedMinutes > COACH_PROPOSAL_MAX_MINUTES) continue;
+
+    const resolvedZone =
+      zoneRaw === undefined ? normalizeZoneValue(session.zone) : normalizeZoneValue(zoneRaw);
+    if (!isValidCoachZone(resolvedZone)) continue;
+
+    const beforeZone = normalizeZoneValue(session.zone);
+    const changed = resolvedMinutes !== session.minutes || resolvedZone !== beforeZone;
+    if (!changed) continue;
+
+    accepted.push({
+      sessionId: session.id,
+      sessionLabel: getSessionLabel(session),
+      before: {
+        minutes: session.minutes,
+        zone: beforeZone,
+      },
+      after: {
+        minutes: resolvedMinutes,
+        zone: resolvedZone,
+      },
+      reason: reason.slice(0, 280),
+    });
+    seenIds.add(sessionId);
+  }
+
+  return accepted;
+}
+
+async function expirePendingProposalIfNeeded(
+  userId: string,
+  proposal: CoachAdjustmentProposal,
+): Promise<CoachAdjustmentProposal> {
+  if (proposal.status !== "pending") return proposal;
+  if (new Date(proposal.expiresAt).getTime() > Date.now()) return proposal;
+
+  const [expired] = await db
+    .update(coachAdjustmentProposals)
+    .set({ status: "expired" })
+    .where(
+      and(
+        eq(coachAdjustmentProposals.userId, userId),
+        eq(coachAdjustmentProposals.id, proposal.id),
+        eq(coachAdjustmentProposals.status, "pending"),
+      ),
+    )
+    .returning();
+
+  return expired ?? { ...proposal, status: "expired" };
 }
 
 export async function registerRoutes(
@@ -255,6 +470,28 @@ export async function registerRoutes(
         return res.status(400).json({ error: err.message });
       }
       res.status(500).json({ error: "Failed to upsert metric" });
+    }
+  });
+
+  app.patch("/api/metrics/:id", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+      const parsed = metricUpdateSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+      const metric = await storage.updateMetric(userId, req.params.id, parsed.data);
+      if (!metric) return res.status(404).json({ error: "Metric not found" });
+      res.json(metric);
+    } catch (err: any) {
+      if (err?.message?.includes("Metric date")) {
+        return res.status(400).json({ error: err.message });
+      }
+      if (err?.code === "23505") {
+        return res.status(409).json({
+          error: "A metric already exists for that date. Choose another date or edit that entry.",
+        });
+      }
+      res.status(500).json({ error: "Failed to update metric" });
     }
   });
 
@@ -947,6 +1184,366 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/coach/context", async (req, res) => {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [sessions, metrics, activities, savedActiveWeek, refreshToken, stravaLastSyncAt] =
+        await Promise.all([
+          storage.getSessions(userId),
+          storage.getMetrics(userId),
+          storage.getStravaActivities(userId),
+          storage.getSetting(userId, "activeWeek"),
+          storage.getSetting(userId, "stravaRefreshToken"),
+          storage.getSetting(userId, "stravaLastSync"),
+        ]);
+
+      const activeWeek = resolveCurrentWeek(savedActiveWeek, sessions);
+      const lastRide = [...activities]
+        .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+
+      res.json({
+        activeWeek,
+        weekSessionCount: sessions.filter((session) => session.week === activeWeek).length,
+        hasStravaConnection: Boolean(refreshToken),
+        stravaSyncedRideCount: activities.length,
+        stravaRecentRideCount14: countRecentStravaRides(activities, 14),
+        stravaLastRideDate: lastRide ? formatDate(lastRide.startDate) : null,
+        stravaLastSyncAt: stravaLastSyncAt || null,
+        metricsTotalCount: metrics.length,
+        metricsRecentCount7: countRecentMetrics(metrics, 7),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch coach context" });
+    }
+  });
+
+  app.get("/api/coach/proposals/:id", async (req, res) => {
+    try {
+      if (!COACH_ADJUSTMENTS_SAFE_MODE) {
+        return res.status(404).json({ error: "Coach proposals are disabled" });
+      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [proposal] = await db
+        .select()
+        .from(coachAdjustmentProposals)
+        .where(
+          and(
+            eq(coachAdjustmentProposals.userId, userId),
+            eq(coachAdjustmentProposals.id, req.params.id),
+          ),
+        )
+        .limit(1);
+
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      const normalized = await expirePendingProposalIfNeeded(userId, proposal);
+      res.json(toCoachProposalApiResponse(normalized));
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch coach proposal" });
+    }
+  });
+
+  app.post("/api/coach/proposals/:id/cancel", async (req, res) => {
+    try {
+      if (!COACH_ADJUSTMENTS_SAFE_MODE) {
+        return res.status(404).json({ error: "Coach proposals are disabled" });
+      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [proposal] = await db
+        .select()
+        .from(coachAdjustmentProposals)
+        .where(
+          and(
+            eq(coachAdjustmentProposals.userId, userId),
+            eq(coachAdjustmentProposals.id, req.params.id),
+          ),
+        )
+        .limit(1);
+
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      const normalized = await expirePendingProposalIfNeeded(userId, proposal);
+      if (normalized.status !== "pending") {
+        return res.status(409).json({
+          error: `Proposal is already ${normalized.status}`,
+          proposal: toCoachProposalApiResponse(normalized),
+        });
+      }
+
+      const [cancelled] = await db
+        .update(coachAdjustmentProposals)
+        .set({ status: "cancelled" })
+        .where(
+          and(
+            eq(coachAdjustmentProposals.userId, userId),
+            eq(coachAdjustmentProposals.id, normalized.id),
+            eq(coachAdjustmentProposals.status, "pending"),
+          ),
+        )
+        .returning();
+
+      if (!cancelled) {
+        return res.status(409).json({ error: "Proposal status changed. Please refresh and retry." });
+      }
+
+      res.json({ proposal: toCoachProposalApiResponse(cancelled) });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to cancel coach proposal" });
+    }
+  });
+
+  app.post("/api/coach/proposals/:id/apply", async (req, res) => {
+    try {
+      if (!COACH_ADJUSTMENTS_SAFE_MODE) {
+        return res.status(404).json({ error: "Coach proposals are disabled" });
+      }
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const [proposal] = await db
+        .select()
+        .from(coachAdjustmentProposals)
+        .where(
+          and(
+            eq(coachAdjustmentProposals.userId, userId),
+            eq(coachAdjustmentProposals.id, req.params.id),
+          ),
+        )
+        .limit(1);
+
+      if (!proposal) {
+        return res.status(404).json({ error: "Proposal not found" });
+      }
+
+      const normalized = await expirePendingProposalIfNeeded(userId, proposal);
+      if (normalized.status !== "pending") {
+        return res.status(409).json({
+          error: `Proposal is already ${normalized.status}`,
+          proposal: toCoachProposalApiResponse(normalized),
+        });
+      }
+
+      const proposalChanges = Array.isArray(normalized.changes)
+        ? (normalized.changes as CoachProposalApiItem[])
+        : [];
+      if (proposalChanges.length === 0) {
+        return res.status(400).json({ error: "Proposal has no changes to apply" });
+      }
+
+      const sessionIds = Array.from(new Set(proposalChanges.map((item) => item.sessionId)));
+      const targetedSessions = sessionIds.length
+        ? await db
+            .select()
+            .from(sessionsTable)
+            .where(
+              and(
+                eq(sessionsTable.userId, userId),
+                inArray(sessionsTable.id, sessionIds),
+              ),
+            )
+        : [];
+      const sessionsById = new Map(targetedSessions.map((session) => [session.id, session]));
+      const nowIso = new Date().toISOString();
+      const todayIso = nowIso.slice(0, 10);
+      const todayOrder = getTodayOrder();
+
+      const result = await db.transaction(async (tx) => {
+        const [event] = await tx
+          .insert(coachAdjustmentEvents)
+          .values({
+            userId,
+            proposalId: normalized.id,
+            activeWeek: normalized.activeWeek,
+            appliedCount: 0,
+            skippedCount: 0,
+          })
+          .returning();
+
+        const eventItems: Array<typeof coachAdjustmentEventItems.$inferInsert> = [];
+        let appliedCount = 0;
+        let skippedCount = 0;
+        const responseItems: Array<{ sessionId: string; status: "applied" | "skipped"; skipReason?: string }> = [];
+
+        for (const change of proposalChanges) {
+          const session = sessionsById.get(change.sessionId);
+          if (!session) {
+            skippedCount += 1;
+            responseItems.push({
+              sessionId: change.sessionId,
+              status: "skipped",
+              skipReason: "Session no longer exists",
+            });
+            eventItems.push({
+              userId,
+              eventId: event.id,
+              sessionId: change.sessionId,
+              status: "skipped",
+              skipReason: "Session no longer exists",
+              beforeMinutes: change.before?.minutes ?? null,
+              afterMinutes: change.after?.minutes ?? null,
+              beforeZone: normalizeZoneValue(change.before?.zone ?? null),
+              afterZone: normalizeZoneValue(change.after?.zone ?? null),
+              reason: change.reason || "No reason provided",
+            });
+            continue;
+          }
+
+          if (!isFutureSessionForCoach(session, normalized.activeWeek, todayIso, todayOrder)) {
+            const skipReason = session.completed
+              ? "Session already completed"
+              : session.week !== normalized.activeWeek
+                ? "Session is not in the active week"
+                : "Session is no longer in the future";
+            skippedCount += 1;
+            responseItems.push({ sessionId: session.id, status: "skipped", skipReason });
+            eventItems.push({
+              userId,
+              eventId: event.id,
+              sessionId: session.id,
+              status: "skipped",
+              skipReason,
+              beforeMinutes: session.minutes,
+              afterMinutes: change.after?.minutes ?? null,
+              beforeZone: normalizeZoneValue(session.zone),
+              afterZone: normalizeZoneValue(change.after?.zone ?? null),
+              reason: change.reason || "No reason provided",
+            });
+            continue;
+          }
+
+          const targetMinutes = Number(change.after?.minutes);
+          const targetZone = normalizeZoneValue(change.after?.zone ?? null);
+          if (
+            !Number.isFinite(targetMinutes) ||
+            targetMinutes < COACH_PROPOSAL_MIN_MINUTES ||
+            targetMinutes > COACH_PROPOSAL_MAX_MINUTES ||
+            !isValidCoachZone(targetZone)
+          ) {
+            skippedCount += 1;
+            responseItems.push({
+              sessionId: session.id,
+              status: "skipped",
+              skipReason: "Invalid proposal values",
+            });
+            eventItems.push({
+              userId,
+              eventId: event.id,
+              sessionId: session.id,
+              status: "skipped",
+              skipReason: "Invalid proposal values",
+              beforeMinutes: session.minutes,
+              afterMinutes: Number.isFinite(targetMinutes) ? Math.round(targetMinutes) : null,
+              beforeZone: normalizeZoneValue(session.zone),
+              afterZone: targetZone,
+              reason: change.reason || "No reason provided",
+            });
+            continue;
+          }
+
+          const roundedMinutes = Math.round(targetMinutes);
+          const currentZone = normalizeZoneValue(session.zone);
+          if (roundedMinutes === session.minutes && targetZone === currentZone) {
+            skippedCount += 1;
+            responseItems.push({
+              sessionId: session.id,
+              status: "skipped",
+              skipReason: "No effective change",
+            });
+            eventItems.push({
+              userId,
+              eventId: event.id,
+              sessionId: session.id,
+              status: "skipped",
+              skipReason: "No effective change",
+              beforeMinutes: session.minutes,
+              afterMinutes: roundedMinutes,
+              beforeZone: currentZone,
+              afterZone: targetZone,
+              reason: change.reason || "No reason provided",
+            });
+            continue;
+          }
+
+          await tx
+            .update(sessionsTable)
+            .set({
+              minutes: roundedMinutes,
+              zone: targetZone,
+              adjustedByCoach: true,
+              adjustedByCoachAt: nowIso,
+              lastCoachAdjustmentEventId: event.id,
+            })
+            .where(
+              and(
+                eq(sessionsTable.userId, userId),
+                eq(sessionsTable.id, session.id),
+              ),
+            );
+
+          appliedCount += 1;
+          responseItems.push({ sessionId: session.id, status: "applied" });
+          eventItems.push({
+            userId,
+            eventId: event.id,
+            sessionId: session.id,
+            status: "applied",
+            skipReason: null,
+            beforeMinutes: session.minutes,
+            afterMinutes: roundedMinutes,
+            beforeZone: currentZone,
+            afterZone: targetZone,
+            reason: change.reason || "No reason provided",
+          });
+        }
+
+        if (eventItems.length > 0) {
+          await tx.insert(coachAdjustmentEventItems).values(eventItems);
+        }
+
+        await tx
+          .update(coachAdjustmentEvents)
+          .set({ appliedCount, skippedCount })
+          .where(
+            and(
+              eq(coachAdjustmentEvents.userId, userId),
+              eq(coachAdjustmentEvents.id, event.id),
+            ),
+          );
+
+        await tx
+          .update(coachAdjustmentProposals)
+          .set({ status: "applied" })
+          .where(
+            and(
+              eq(coachAdjustmentProposals.userId, userId),
+              eq(coachAdjustmentProposals.id, normalized.id),
+              eq(coachAdjustmentProposals.status, "pending"),
+            ),
+          );
+
+        return { eventId: event.id, appliedCount, skippedCount, items: responseItems };
+      });
+
+      console.log(
+        `[coach-adjust] apply proposal=${normalized.id} user=${userId} applied=${result.appliedCount} skipped=${result.skippedCount}`,
+      );
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to apply coach proposal" });
+    }
+  });
+
   app.get("/api/coach/status", async (req, res) => {
     try {
       const userId = requireUserId(req, res);
@@ -995,26 +1592,41 @@ export async function registerRoutes(
       const [
         sessions,
         metrics,
-        activities,
         savedActiveWeek,
         refreshToken,
+        stravaLastSyncAt,
         subscriptionTierRaw,
         usageRaw,
       ] = await Promise.all([
         storage.getSessions(userId),
         storage.getMetrics(userId),
-        storage.getStravaActivities(userId),
         storage.getSetting(userId, "activeWeek"),
         storage.getSetting(userId, "stravaRefreshToken"),
+        storage.getSetting(userId, "stravaLastSync"),
         storage.getSetting(userId, "subscriptionTier"),
         storage.getSetting(userId, usageKey),
       ]);
+
+      let activities = await storage.getStravaActivities(userId);
+
+      if (refreshToken && shouldSyncStravaForCoach(stravaLastSyncAt, activities.length)) {
+        try {
+          await syncStravaActivities(userId, refreshToken);
+          await storage.setSetting(userId, "stravaLastSync", new Date().toISOString());
+          await setStravaLastError(userId, null);
+          activities = await storage.getStravaActivities(userId);
+        } catch (err: any) {
+          const syncError = sanitizeStravaErrorMessage(err?.message || "Coach Strava sync failed");
+          await setStravaLastError(userId, syncError);
+          console.warn("[coach] Strava refresh skipped due to sync error:", syncError);
+        }
+      }
 
       const subscriptionTier = normalizeSubscriptionTier(subscriptionTierRaw);
       const usedThisMonth = Math.max(0, Number.parseInt(usageRaw || "0", 10) || 0);
       if (subscriptionTier !== "pro" && usedThisMonth >= FREE_COACH_MONTHLY_LIMIT) {
         return res.status(403).json({
-          error: "AI Coach is available on Pro. Free includes 1 coach reply per month.",
+          error: `AI Coach is available on Pro. Free includes ${FREE_COACH_MONTHLY_LIMIT} coach replies per month.`,
           code: "PRO_REQUIRED",
           feature: "coach_chat",
           monthlyLimit: FREE_COACH_MONTHLY_LIMIT,
@@ -1031,12 +1643,14 @@ export async function registerRoutes(
         activities,
         activeWeek,
         stravaConnected: Boolean(refreshToken),
+        stravaLastSyncAt,
       });
 
       const prompt = buildCoachPrompt({
         message: parsed.data.message,
         history: parsed.data.history,
         context,
+        coachAdjustmentsEnabled: COACH_ADJUSTMENTS_SAFE_MODE,
       });
 
       const ai = getGeminiClient();
@@ -1050,9 +1664,50 @@ export async function registerRoutes(
         },
       });
 
-      const reply = response.text?.trim();
+      const rawResponse = response.text?.trim() || "";
+      const parsedPayload = parseCoachModelPayload(rawResponse);
+      if (COACH_ADJUSTMENTS_SAFE_MODE && !parsedPayload) {
+        console.warn("[coach-adjust] model response was not valid JSON; falling back to plain reply");
+      }
+      const reply = parsedPayload?.reply?.trim() || rawResponse;
       if (!reply) {
         return res.status(502).json({ error: "Coach response was empty. Please retry." });
+      }
+
+      let proposal: CoachProposalApiResponse | null = null;
+      if (COACH_ADJUSTMENTS_SAFE_MODE && Array.isArray(parsedPayload?.changes) && parsedPayload!.changes.length > 0) {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const todayOrder = getTodayOrder();
+        const eligibleSessions = sessions.filter((session) =>
+          isFutureSessionForCoach(session, activeWeek, todayIso, todayOrder),
+        );
+        const validatedChanges = buildValidatedCoachProposalChanges(parsedPayload!.changes, eligibleSessions);
+
+        if (validatedChanges.length > 0) {
+          const expiresAt = new Date(
+            Date.now() + COACH_PROPOSAL_TTL_HOURS * 60 * 60 * 1000,
+          ).toISOString();
+
+          const [createdProposal] = await db
+            .insert(coachAdjustmentProposals)
+            .values({
+              userId,
+              activeWeek,
+              status: "pending",
+              changes: validatedChanges,
+              sourceUserMessage: parsed.data.message,
+              coachReply: reply,
+              expiresAt,
+            })
+            .returning();
+
+          proposal = toCoachProposalApiResponse(createdProposal);
+          console.log(
+            `[coach-adjust] proposal created id=${createdProposal.id} user=${userId} changes=${validatedChanges.length}`,
+          );
+        } else {
+          console.warn("[coach-adjust] structured changes returned but none passed validation");
+        }
       }
 
       let nextUsedThisMonth = usedThisMonth;
@@ -1063,17 +1718,21 @@ export async function registerRoutes(
 
       res.json({
         reply,
+        proposal,
         context: {
           activeWeek,
           planSessionCount: sessions.filter((session) => session.week === activeWeek).length,
           hasStravaConnection: Boolean(refreshToken),
+          stravaSyncedRideCount: activities.length,
           stravaRecentRideCount: countRecentStravaRides(activities, 14),
+          stravaLastSyncAt,
           metricsRecentCount: countRecentMetrics(metrics, 7),
           tier: subscriptionTier,
           coachRemainingThisMonth:
             subscriptionTier === "pro"
               ? null
               : Math.max(0, FREE_COACH_MONTHLY_LIMIT - nextUsedThisMonth),
+          coachAdjustmentsEnabled: COACH_ADJUSTMENTS_SAFE_MODE,
         },
       });
     } catch (err: any) {
@@ -1381,7 +2040,7 @@ function getWeekSessionSummary(sessions: Session[], activeWeek: number): string 
       const datePart = session.scheduledDate ? `${session.scheduledDate} ` : "";
       const status = session.completed ? "done" : "planned";
       const zone = session.zone ? ` ${session.zone}` : "";
-      return `- ${datePart}${session.day}: ${session.description} (${session.type}, ${session.minutes} min${zone}) [${status}]`;
+      return `- [id=${session.id}] ${datePart}${session.day}: ${session.description} (${session.type}, ${session.minutes} min${zone}) [${status}]`;
     })
     .join("\n");
 
@@ -1396,12 +2055,20 @@ function countRecentStravaRides(activities: StravaActivity[], days: number): num
   }).length;
 }
 
-function getStravaSummary(activities: StravaActivity[], connected: boolean): string {
+function getStravaSummary(
+  activities: StravaActivity[],
+  connected: boolean,
+  stravaLastSyncAt: string | null,
+): string {
   if (!connected) {
     return "Not connected to Strava (no refresh token).";
   }
 
   const threshold = getDaysAgoDate(14).getTime();
+  const sortedByDate = [...activities].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const latestRide = sortedByDate[0] || null;
+  const totalRides = activities.length;
+  const lastSyncPart = stravaLastSyncAt ? ` Last sync: ${formatDate(stravaLastSyncAt)}.` : "";
   const recentRides = activities
     .filter((activity) => {
       const startedAt = safeDate(activity.startDate);
@@ -1410,7 +2077,10 @@ function getStravaSummary(activities: StravaActivity[], connected: boolean): str
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
 
   if (recentRides.length === 0) {
-    return "Connected to Strava, but no rides synced in the last 14 days.";
+    if (!latestRide) {
+      return `Connected to Strava, but no rides have been synced yet.${lastSyncPart}`;
+    }
+    return `Connected to Strava with ${totalRides} synced rides. Most recent ride: ${formatDate(latestRide.startDate)} (${latestRide.name}). No rides in the last 14 days.${lastSyncPart}`;
   }
 
   const totalDistanceKm = recentRides.reduce((sum, activity) => sum + (activity.distance || 0), 0) / 1000;
@@ -1434,7 +2104,7 @@ function getStravaSummary(activities: StravaActivity[], connected: boolean): str
     })
     .join("\n");
 
-  return `Rides in last 14 days: ${recentRides.length}; distance ${totalDistanceKm.toFixed(1)} km; moving time ${totalMovingHours.toFixed(1)} h; elevation ${totalElevation.toFixed(0)} m${averageHr ? `; avg HR ${averageHr} bpm` : ""}.\nRecent rides:\n${topRides}`;
+  return `Synced rides total: ${totalRides}. Rides in last 14 days: ${recentRides.length}; distance ${totalDistanceKm.toFixed(1)} km; moving time ${totalMovingHours.toFixed(1)} h; elevation ${totalElevation.toFixed(0)} m${averageHr ? `; avg HR ${averageHr} bpm` : ""}.${lastSyncPart}\nRecent rides:\n${topRides}`;
 }
 
 function countRecentMetrics(metrics: Metric[], days: number): number {
@@ -1491,9 +2161,14 @@ function buildCoachContext(params: {
   activities: StravaActivity[];
   activeWeek: number;
   stravaConnected: boolean;
+  stravaLastSyncAt: string | null;
 }): string {
   const weekSummary = getWeekSessionSummary(params.sessions, params.activeWeek);
-  const stravaSummary = getStravaSummary(params.activities, params.stravaConnected);
+  const stravaSummary = getStravaSummary(
+    params.activities,
+    params.stravaConnected,
+    params.stravaLastSyncAt,
+  );
   const metricsSummary = getMetricsSummary(params.metrics);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1513,17 +2188,18 @@ function buildCoachPrompt(params: {
   message: string;
   history: CoachHistoryItem[];
   context: string;
+  coachAdjustmentsEnabled: boolean;
 }): string {
   const historyText = params.history
     .slice(-12)
     .map((item) => `${item.role === "assistant" ? "Coach" : "Athlete"}: ${item.content}`)
     .join("\n");
-
-  return `You are PeakReady Coach, an MTB endurance coach.
+  const basePrompt = `You are PeakReady Coach, an MTB endurance coach.
 Style and behavior rules:
 - Be practical, direct, and supportive.
 - Give specific actions (durations, intensity zones, recovery suggestions) when useful.
 - Use the provided training context and do not invent data.
+- If the athlete asks to update this week's plan, suggest exact edits by day/session from the current week plan.
 - If information is missing, say what is missing and ask 1 clarifying question.
 - If the athlete reports severe pain, dizziness, or red-flag symptoms, advise them to stop training and seek medical care.
 - Keep responses concise (roughly 80-180 words) and structured with short bullets when helpful.
@@ -1535,7 +2211,34 @@ Recent conversation:
 ${historyText || "No prior messages."}
 
 Athlete message:
-${params.message}
+${params.message}`;
+
+  if (!params.coachAdjustmentsEnabled) {
+    return `${basePrompt}
 
 Respond as the MTB endurance coach only.`;
+  }
+
+  return `${basePrompt}
+
+If plan adjustments are appropriate, suggest at most ${COACH_PROPOSAL_MAX_CHANGES} changes and only for session IDs from the current active week that were provided in context.
+Allowed fields to change are minutes and zone only.
+Minutes must be between ${COACH_PROPOSAL_MIN_MINUTES} and ${COACH_PROPOSAL_MAX_MINUTES}.
+Do not suggest changes for completed sessions.
+
+Return valid JSON only (no markdown, no code fences) with this exact shape:
+{
+  "reply": "string",
+  "changes": [
+    {
+      "sessionId": "string",
+      "minutes": 90,
+      "zone": "Z2",
+      "reason": "string"
+    }
+  ]
+}
+
+If no safe changes are needed, return an empty array for changes.
+Reply must still be concise and actionable.`;
 }
